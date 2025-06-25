@@ -24,3 +24,6 @@ imprintor-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+
+# Rust binary artifacts
+/target/
