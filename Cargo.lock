@@ -855,6 +855,7 @@ dependencies = [
  "comemo",
  "fontdb 0.18.0",
  "rustler",
+ "serde_json",
  "typst",
  "typst-pdf",
 ]

@@ -5,10 +5,11 @@ A fast and efficient Elixir library for generating PDF documents from [Typst](ht
 ## Features
 
 - 🚀 **Fast PDF generation** using native Rust and Typst
-- 📄 **Template-based** document creation with variable substitution
+- 📄 **Template-based** document creation with JSON data integration
 - 🔧 **Simple API** for Elixir developers
 - 💾 **Flexible output** - generate PDFs in memory or save to files
 - 📝 **Typst syntax** support for beautiful document formatting
+- 🧩 **Rich data support** - pass complex nested data structures as JSON
 
 ## Installation
 
@@ -27,20 +28,20 @@ end
 ### Basic PDF Generation
 
 ```elixir
-# Define a Typst template with variables
+# Define a Typst template using json_data
 template = """
-= Hello {{name}}!
+= Hello #json_data.name!
 
-*Date:* {{date}}
+*Date:* #json_data.date
 
 This is a sample document generated using Imprintor.
 
 == Details
 
 Here are some details:
-- *Name:* {{name}}
-- *Email:* {{email}}
-- *Age:* {{age}}
+- *Name:* #json_data.name
+- *Email:* #json_data.email
+- *Age:* #json_data.age
 
 Thanks for using Imprintor!
 """
@@ -50,7 +51,7 @@ data = %{
   "name" => "John Doe",
   "date" => "2024-01-15",
   "email" => "john@example.com",
-  "age" => "30"
+  "age" => 30  # Note: can be numbers, strings, booleans, etc.
 }
 
 # Generate PDF
@@ -74,17 +75,17 @@ data = %{}
 Create a template file (`templates/invoice.typ`):
 
 ```typst
-= Invoice #{{invoice_number}}
+= Invoice #json_data.invoice_number
 
-*Date:* {{date}}
-*To:* {{client_name}}
-*From:* {{company_name}}
+*Date:* #json_data.date
+*To:* #json_data.client_name
+*From:* #json_data.company_name
 
 == Items
 
-{{item_description}}
+#json_data.item_description
 
-*Total:* ${{total}}
+*Total:* $#json_data.total
 
 Thank you for your business!
 ```
@@ -105,9 +106,48 @@ data = %{
 File.write!("invoice_12345.pdf", pdf_binary)
 ```
 
-## Template Syntax
+## Template Syntax and Data Access
 
-Imprintor uses Typst syntax for document formatting. Variables are substituted using `{{variable_name}}` syntax.
+Imprintor uses Typst syntax for document formatting. Data is made available in templates under the `json_data` variable.
+
+### Accessing Data
+
+- `#json_data.field_name` - Access simple fields
+- `#json_data.nested.field` - Access nested object fields  
+- `#json_data.array.at(0)` - Access array elements by index
+- `#json_data.array.len()` - Get array length
+
+### Complex Data Example
+
+```elixir
+data = %{
+  "user" => %{
+    "name" => "John Doe",
+    "contact" => %{
+      "email" => "john@example.com",
+      "phone" => "+1-555-1234"
+    }
+  },
+  "orders" => [
+    %{"id" => 1, "product" => "Widget A", "price" => 29.99},
+    %{"id" => 2, "product" => "Widget B", "price" => 39.99}
+  ]
+}
+
+template = """
+= Customer: #json_data.user.name
+
+*Contact:*
+- Email: #json_data.user.contact.email
+- Phone: #json_data.user.contact.phone
+
+== Recent Orders
+*First Order:* #json_data.orders.at(0).product - $#json_data.orders.at(0).price
+*Second Order:* #json_data.orders.at(1).product - $#json_data.orders.at(1).price
+
+*Total Orders:* #json_data.orders.len()
+"""
+```
 
 ### Common Typst Formatting
 

@@ -16,7 +16,7 @@ struct TypstWorld {
 }
 
 impl TypstWorld {
-    fn new(main_content: &str) -> Self {
+    fn new(main_content: &str, json_data: Option<String>) -> Self {
         let mut db = Database::new();
         db.load_system_fonts();
 
@@ -54,8 +54,17 @@ impl TypstWorld {
         let mut files = HashMap::new();
         files.insert(main, Source::new(main, main_content.to_string()));
 
+        // Create library with JSON data if provided
+        let mut library = Library::default();
+        if let Some(json_str) = json_data {
+            if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&json_str) {
+                let typst_value = json_to_typst_value(json_value);
+                library.global.scope_mut().define("json_data", typst_value);
+            }
+        }
+
         Self {
-            library: Prehashed::new(Library::default()),
+            library: Prehashed::new(library),
             book: Prehashed::new(book),
             fonts,
             files,
@@ -99,20 +108,43 @@ impl World for TypstWorld {
     }
 }
 
+fn json_to_typst_value(json: serde_json::Value) -> typst::foundations::Value {
+    use typst::foundations::{Array, Dict, IntoValue, Str, Value};
+
+    match json {
+        serde_json::Value::Null => Value::None,
+        serde_json::Value::Bool(b) => b.into_value(),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                i.into_value()
+            } else if let Some(f) = n.as_f64() {
+                f.into_value()
+            } else {
+                Value::None
+            }
+        }
+        serde_json::Value::String(s) => Str::from(s).into_value(),
+        serde_json::Value::Array(arr) => {
+            let typst_array: Array = arr.into_iter().map(json_to_typst_value).collect();
+            typst_array.into_value()
+        }
+        serde_json::Value::Object(obj) => {
+            let mut dict = Dict::new();
+            for (key, value) in obj {
+                dict.insert(Str::from(key), json_to_typst_value(value));
+            }
+            dict.into_value()
+        }
+    }
+}
+
 #[rustler::nif]
 fn compile_typst_to_pdf<'a>(
     env: rustler::Env<'a>,
     template: String,
-    data: HashMap<String, String>,
+    json_data: String,
 ) -> Result<rustler::Binary<'a>, String> {
-    // Replace placeholders in template with actual data
-    let mut content = template;
-    for (key, value) in data {
-        let placeholder = format!("{{{{{}}}}}", key);
-        content = content.replace(&placeholder, &value);
-    }
-
-    let world = TypstWorld::new(&content);
+    let world = TypstWorld::new(&template, Some(json_data));
 
     match typst::compile(&world, &mut Default::default()) {
         Ok(document) => {
