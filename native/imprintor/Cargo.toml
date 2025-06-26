@@ -16,5 +16,7 @@
   ] }
   typst-pdf = "0.13.1"
   time = "0.3.36"
-  comemo = "0.4"
   serde_json = "1.0"
+  ureq = "2.10.1"
+  tar = "0.4.43"
+  zune-inflate = "0.2.54"

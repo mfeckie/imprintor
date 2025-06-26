@@ -3,9 +3,11 @@ use rustler::{NifStruct, Term};
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use typst::diag::{FileError, FileResult};
+use typst::diag::{FileError, FileResult, PackageError, PackageResult};
+use typst::ecow::eco_format;
 use typst::foundations::{Array, Dict, Str, Value};
 use typst::foundations::{Bytes, Datetime};
+use typst::syntax::package::PackageSpec;
 use typst::syntax::{FileId, Source};
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
@@ -49,6 +51,7 @@ struct ImprintorNifWorld {
     fonts: Vec<FontSlot>,
     files: Arc<Mutex<HashMap<FileId, FileEntry>>>,
     time: time::OffsetDateTime,
+    cache_directory: PathBuf,
 }
 #[derive(NifStruct)]
 #[module = "Imprintor.Config"]
@@ -80,6 +83,10 @@ impl ImprintorNifWorld {
                 .define("elixir_data", typst_value);
         }
 
+        let cache_directory = std::env::var_os("CACHE_DIRECTORY")
+            .map(|os_path| os_path.into())
+            .unwrap_or(std::env::temp_dir());
+
         Self {
             source: Source::detached(config.source_document),
             fonts: font_searcher.fonts,
@@ -88,6 +95,7 @@ impl ImprintorNifWorld {
             library: LazyHash::new(library),
             files: Arc::new(Mutex::new(HashMap::new())),
             root,
+            cache_directory,
         }
     }
 
@@ -99,8 +107,10 @@ impl ImprintorNifWorld {
         if let Some(entry) = files.get(&id) {
             return Ok(entry.clone());
         }
-        let path = if let Some(_package) = id.package() {
-            return Err(FileError::AccessDenied);
+        let path = if let Some(package) = id.package() {
+            // Fetching file from package
+            let package_dir = self.download_package(package)?;
+            id.vpath().resolve(&package_dir)
         } else {
             // Fetching file from disk
             id.vpath().resolve(&self.root)
@@ -113,6 +123,70 @@ impl ImprintorNifWorld {
             .or_insert(FileEntry::new(content, None))
             .clone())
     }
+
+    /// Downloads the package and returns the system path of the unpacked package.
+    fn download_package(&self, package: &PackageSpec) -> PackageResult<PathBuf> {
+        let package_subdir = format!("{}/{}/{}", package.namespace, package.name, package.version);
+        let path = self.cache_directory.join(package_subdir);
+
+        let http = ureq::Agent::new();
+
+        if path.exists() {
+            return Ok(path);
+        }
+
+        eprintln!("downloading {package}");
+        let url = format!(
+            "https://packages.typst.org/{}/{}-{}.tar.gz",
+            package.namespace, package.name, package.version,
+        );
+
+        let response = retry(|| {
+            let response = http
+                .get(&url)
+                .call()
+                .map_err(|error| eco_format!("{error}"))?;
+
+            let status = response.status();
+            if !http_successful(status) {
+                return Err(eco_format!(
+                    "response returned unsuccessful status code {status}",
+                ));
+            }
+
+            Ok(response)
+        })
+        .map_err(|error| PackageError::NetworkFailed(Some(error)))?;
+
+        let mut compressed_archive = Vec::new();
+        response
+            .into_reader()
+            .read_to_end(&mut compressed_archive)
+            .map_err(|error| PackageError::NetworkFailed(Some(eco_format!("{error}"))))?;
+        let raw_archive = zune_inflate::DeflateDecoder::new(&compressed_archive)
+            .decode_gzip()
+            .map_err(|error| PackageError::MalformedArchive(Some(eco_format!("{error}"))))?;
+        let mut archive = tar::Archive::new(raw_archive.as_slice());
+        archive.unpack(&path).map_err(|error| {
+            _ = std::fs::remove_dir_all(&path);
+            PackageError::MalformedArchive(Some(eco_format!("{error}")))
+        })?;
+
+        Ok(path)
+    }
+}
+
+fn retry<T, E>(mut f: impl FnMut() -> Result<T, E>) -> Result<T, E> {
+    if let Ok(ok) = f() {
+        Ok(ok)
+    } else {
+        f()
+    }
+}
+
+fn http_successful(status: u16) -> bool {
+    // 2XX
+    status / 100 == 2
 }
 
 fn typst_values_from_elxiir(term: Term) -> typst::foundations::Value {
