@@ -15,5 +15,6 @@
     "embed-fonts",
   ] }
   typst-pdf = "0.13.1"
+  time = "0.3.36"
   comemo = "0.4"
   serde_json = "1.0"

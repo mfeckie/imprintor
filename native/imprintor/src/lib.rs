@@ -14,6 +14,7 @@ struct TypstWorld {
     book: LazyHash<FontBook>,
     fonts: Vec<FontSlot>,
     files: HashMap<FileId, Source>,
+    time: time::OffsetDateTime,
 }
 
 impl TypstWorld {
@@ -49,6 +50,7 @@ impl TypstWorld {
             book: LazyHash::new(font_searcher.book),
             fonts: font_searcher.fonts,
             files,
+            time: time::OffsetDateTime::now_utc(),
         }
     }
 }
@@ -83,8 +85,11 @@ impl World for TypstWorld {
         self.fonts[index].get()
     }
 
-    fn today(&self, _offset: Option<i64>) -> Option<Datetime> {
-        Some(Datetime::from_ymd(2024, 1, 1).unwrap())
+    fn today(&self, offset: Option<i64>) -> Option<Datetime> {
+        let offset = offset.unwrap_or(0);
+        let offset = time::UtcOffset::from_hms(offset.try_into().ok()?, 0, 0).ok()?;
+        let time = self.time.checked_to_offset(offset)?;
+        Some(Datetime::Date(time.date()))
     }
 }
 
