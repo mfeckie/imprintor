@@ -1,4 +1,10 @@
+use rustler::types::binary;
+use rustler::{NifStruct, Term};
 use std::collections::HashMap;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+use typst::diag::{FileError, FileResult};
+use typst::foundations::{Array, Dict, Str, Value};
 use typst::foundations::{Bytes, Datetime};
 use typst::syntax::{FileId, Source, VirtualPath};
 use typst::text::{Font, FontBook};
@@ -155,15 +161,43 @@ fn compile_typst_to_pdf<'a>(
     }
 }
 
+/// A File that will be stored in the HashMap.
+#[derive(Clone, Debug)]
+struct FileEntry {
+    bytes: Bytes,
+    source: Option<Source>,
+}
+
+impl FileEntry {
+    fn new(bytes: Vec<u8>, source: Option<Source>) -> Self {
+        Self {
+            bytes: Bytes::new(bytes),
+            source,
+        }
+    }
+
+    fn source(&mut self, id: FileId) -> FileResult<Source> {
+        let source = if let Some(source) = &self.source {
+            source
+        } else {
+            let contents = std::str::from_utf8(&self.bytes).map_err(|_| FileError::InvalidUtf8)?;
+            let contents = contents.trim_start_matches('\u{feff}');
+            let source = Source::new(id, contents.into());
+            self.source.insert(source)
+        };
+        Ok(source.clone())
+    }
+}
+
 #[derive(Debug)]
 struct ImprintorNifWorld {
+    root: PathBuf,
     source: Source,
     library: LazyHash<Library>,
     book: LazyHash<FontBook>,
     fonts: Vec<FontSlot>,
-    files: HashMap<FileId, Source>,
+    files: Arc<Mutex<HashMap<FileId, FileEntry>>>,
     time: time::OffsetDateTime,
-    package_directory: PathBuf,
 }
 #[derive(NifStruct)]
 #[module = "Imprintor.Config"]
@@ -171,17 +205,12 @@ pub struct ImprintorConfig<'a> {
     source_document: String,
     extra_fonts: Option<Vec<String>>,
     data: Option<Term<'a>>,
-    package_directory: Option<String>,
+    root_directory: String,
 }
 
 impl ImprintorNifWorld {
     fn new(config: ImprintorConfig) -> Self {
-        let package_directory = match config.package_directory {
-            Some(dir) => PathBuf::from(dir),
-            None => std::env::var_os("CACHE_DIRECTORY")
-                .map(|os_path| os_path.into())
-                .unwrap_or(std::env::temp_dir()),
-        };
+        let root = PathBuf::from(config.root_directory);
 
         let font_searcher = match config.extra_fonts {
             Some(fonts) => Fonts::searcher()
@@ -193,19 +222,45 @@ impl ImprintorNifWorld {
 
         if let Some(elixir_data) = config.data {
             let typst_value = typst_values_from_elxiir(elixir_data);
-            // if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&json_str) {
-            //     let typst_value = json_to_typst_value(json_value);
-            //     library.global.scope_mut().define("json_data", typst_value);
-            // }
+            library
+                .global
+                .scope_mut()
+                .define("elixir_data", typst_value);
         }
 
         Self {
             source: Source::detached(config.source_document),
-            package_directory,
             fonts: font_searcher.fonts,
             time: time::OffsetDateTime::now_utc(),
             book: LazyHash::new(font_searcher.book),
+            library: LazyHash::new(library),
+            files: Arc::new(Mutex::new(HashMap::new())),
+            root,
         }
+    }
+
+    /// Helper to handle file requests.
+    ///
+    /// Requests will be either in packages or a local file.
+    fn file(&self, id: FileId) -> FileResult<FileEntry> {
+        let mut files = self.files.lock().map_err(|_| FileError::AccessDenied)?;
+        if let Some(entry) = files.get(&id) {
+            return Ok(entry.clone());
+        }
+        let path = if let Some(_package) = id.package() {
+            dbg!("CALLED in HERE");
+            return Err(FileError::AccessDenied);
+        } else {
+            // Fetching file from disk
+            id.vpath().resolve(&self.root)
+        }
+        .ok_or(FileError::AccessDenied)?;
+
+        let content = std::fs::read(&path).map_err(|error| FileError::from_io(error, &path))?;
+        Ok(files
+            .entry(id)
+            .or_insert(FileEntry::new(content, None))
+            .clone())
     }
 }
 
@@ -213,17 +268,18 @@ fn typst_values_from_elxiir(term: Term) -> typst::foundations::Value {
     match term.get_type() {
         rustler::TermType::Atom => {
             let atom: String = term.decode().unwrap();
-            Str::from(atom).into_value()
+
+            Value::Str(atom.into())
         }
         rustler::TermType::Binary => {
             let binary: binary::Binary = term.decode().unwrap();
             let string = String::from_utf8(binary.to_vec()).unwrap();
-            Str::from(string).into_value()
+            Value::Str(string.into())
         }
         rustler::TermType::List => {
             let list: Vec<Term> = term.decode().unwrap();
             let typst_array: Array = list.into_iter().map(typst_values_from_elxiir).collect();
-            typst_array.into_value()
+            Value::Array(typst_array)
         }
         rustler::TermType::Map => {
             let map: HashMap<Term, Term> = term.decode().unwrap();
@@ -232,11 +288,11 @@ fn typst_values_from_elxiir(term: Term) -> typst::foundations::Value {
                 let key_str = key.atom_to_string().unwrap();
                 dict.insert(Str::from(key_str), typst_values_from_elxiir(value));
             }
-            dict.into_value()
+            Value::Dict(dict)
         }
         rustler::TermType::Integer => {
             let int: i64 = term.decode().unwrap();
-            Value::Integer(int)
+            Value::Int(int)
         }
         rustler::TermType::Float => {
             let float: f64 = term.decode().unwrap();
@@ -246,5 +302,78 @@ fn typst_values_from_elxiir(term: Term) -> typst::foundations::Value {
     }
 }
 
+/// This is the interface we have to implement such that `typst` can compile it.
+///
+/// I have tried to keep it as minimal as possible
+impl typst::World for ImprintorNifWorld {
+    /// Standard library.
+    fn library(&self) -> &LazyHash<Library> {
+        &self.library
+    }
+
+    /// Metadata about all known Books.
+    fn book(&self) -> &LazyHash<FontBook> {
+        &self.book
+    }
+
+    /// Accessing the main source file.
+    fn main(&self) -> FileId {
+        self.source.id()
+    }
+
+    /// Accessing a specified source file (based on `FileId`).
+    fn source(&self, id: FileId) -> FileResult<Source> {
+        if id == self.source.id() {
+            Ok(self.source.clone())
+        } else {
+            self.file(id)?.source(id)
+        }
+    }
+
+    /// Accessing a specified file (non-file).
+    fn file(&self, id: FileId) -> FileResult<Bytes> {
+        self.file(id).map(|file| file.bytes.clone())
+    }
+
+    /// Accessing a specified font per index of font book.
+    fn font(&self, id: usize) -> Option<Font> {
+        self.fonts[id].get()
+    }
+
+    /// Get the current date.
+    ///
+    /// Optionally, an offset in hours is given.
+    fn today(&self, offset: Option<i64>) -> Option<Datetime> {
+        let offset = offset.unwrap_or(0);
+        let offset = time::UtcOffset::from_hms(offset.try_into().ok()?, 0, 0).ok()?;
+        let time = self.time.checked_to_offset(offset)?;
+        Some(Datetime::Date(time.date()))
+    }
+}
+
+#[rustler::nif]
+fn typst_to_pdf<'a>(
+    env: rustler::Env<'a>,
+    config: ImprintorConfig,
+) -> Result<rustler::Binary<'a>, String> {
+    let world = ImprintorNifWorld::new(config);
+
+    match typst::compile(&world).output {
+        Ok(document) => {
+            let pdf_bytes = typst_pdf::pdf(&document, &PdfOptions::default()).unwrap();
+            let mut binary = rustler::OwnedBinary::new(pdf_bytes.len()).unwrap();
+            binary.as_mut_slice().copy_from_slice(&pdf_bytes);
+            Ok(binary.release(env))
+        }
+        Err(errors) => {
+            let error_msg = errors
+                .iter()
+                .map(|e| format!("{:?}", e))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Err(format!("Compilation failed: {}", error_msg))
+        }
+    }
+}
 
 rustler::init!("Elixir.Imprintor");
