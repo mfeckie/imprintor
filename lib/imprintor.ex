@@ -110,4 +110,6 @@ defmodule Imprintor do
   # Private NIF function - called by compile_to_pdf/2
   def compile_typst_to_pdf(_template, _json_data, _extra_fonts),
     do: :erlang.nif_error(:nif_not_loaded)
+
+  def typst_to_pdf(_config), do: :erlang.nif_error(:nif_not_loaded)
 end
