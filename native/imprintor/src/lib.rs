@@ -211,7 +211,10 @@ impl ImprintorNifWorld {
 
 fn typst_values_from_elxiir(term: Term) -> typst::foundations::Value {
     match term.get_type() {
-        rustler::TermType::Atom => term.atom_to_string().unwrap().into_value(),
+        rustler::TermType::Atom => {
+            let atom: String = term.decode().unwrap();
+            Str::from(atom).into_value()
+        }
         rustler::TermType::Binary => {
             let binary: binary::Binary = term.decode().unwrap();
             let string = String::from_utf8(binary.to_vec()).unwrap();
@@ -233,11 +236,11 @@ fn typst_values_from_elxiir(term: Term) -> typst::foundations::Value {
         }
         rustler::TermType::Integer => {
             let int: i64 = term.decode().unwrap();
-            int.into_value()
+            Value::Integer(int)
         }
         rustler::TermType::Float => {
             let float: f64 = term.decode().unwrap();
-            float.into_value()
+            Value::Float(float)
         }
         _ => Value::None, // Handle other types as needed
     }
