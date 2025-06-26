@@ -8,7 +8,7 @@ use typst_kit::fonts::{FontSlot, Fonts};
 use typst_pdf::PdfOptions;
 
 #[derive(Debug)]
-struct TypstWorld {
+struct InprintorWorld {
     source: Source,
     library: LazyHash<Library>,
     book: LazyHash<FontBook>,
@@ -17,7 +17,7 @@ struct TypstWorld {
     time: time::OffsetDateTime,
 }
 
-impl TypstWorld {
+impl InprintorWorld {
     fn new(
         main_content: &str,
         json_data: Option<String>,
@@ -55,7 +55,7 @@ impl TypstWorld {
     }
 }
 
-impl World for TypstWorld {
+impl World for InprintorWorld {
     fn library(&self) -> &LazyHash<Library> {
         &self.library
     }
@@ -135,7 +135,7 @@ fn compile_typst_to_pdf<'a>(
     json_data: String,
     extra_fonts: Vec<String>,
 ) -> Result<rustler::Binary<'a>, String> {
-    let world = TypstWorld::new(&template, Some(json_data), Some(extra_fonts));
+    let world = InprintorWorld::new(&template, Some(json_data), Some(extra_fonts));
 
     match typst::compile(&world).output {
         Ok(document) => {
