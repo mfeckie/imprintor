@@ -155,4 +155,93 @@ fn compile_typst_to_pdf<'a>(
     }
 }
 
+#[derive(Debug)]
+struct ImprintorNifWorld {
+    source: Source,
+    library: LazyHash<Library>,
+    book: LazyHash<FontBook>,
+    fonts: Vec<FontSlot>,
+    files: HashMap<FileId, Source>,
+    time: time::OffsetDateTime,
+    package_directory: PathBuf,
+}
+#[derive(NifStruct)]
+#[module = "Imprintor.Config"]
+pub struct ImprintorConfig<'a> {
+    source_document: String,
+    extra_fonts: Option<Vec<String>>,
+    data: Option<Term<'a>>,
+    package_directory: Option<String>,
+}
+
+impl ImprintorNifWorld {
+    fn new(config: ImprintorConfig) -> Self {
+        let package_directory = match config.package_directory {
+            Some(dir) => PathBuf::from(dir),
+            None => std::env::var_os("CACHE_DIRECTORY")
+                .map(|os_path| os_path.into())
+                .unwrap_or(std::env::temp_dir()),
+        };
+
+        let font_searcher = match config.extra_fonts {
+            Some(fonts) => Fonts::searcher()
+                .include_system_fonts(true)
+                .search_with(fonts),
+            None => Fonts::searcher().include_system_fonts(true).search(),
+        };
+        let mut library = Library::default();
+
+        if let Some(elixir_data) = config.data {
+            let typst_value = typst_values_from_elxiir(elixir_data);
+            // if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&json_str) {
+            //     let typst_value = json_to_typst_value(json_value);
+            //     library.global.scope_mut().define("json_data", typst_value);
+            // }
+        }
+
+        Self {
+            source: Source::detached(config.source_document),
+            package_directory,
+            fonts: font_searcher.fonts,
+            time: time::OffsetDateTime::now_utc(),
+            book: LazyHash::new(font_searcher.book),
+        }
+    }
+}
+
+fn typst_values_from_elxiir(term: Term) -> typst::foundations::Value {
+    match term.get_type() {
+        rustler::TermType::Atom => term.atom_to_string().unwrap().into_value(),
+        rustler::TermType::Binary => {
+            let binary: binary::Binary = term.decode().unwrap();
+            let string = String::from_utf8(binary.to_vec()).unwrap();
+            Str::from(string).into_value()
+        }
+        rustler::TermType::List => {
+            let list: Vec<Term> = term.decode().unwrap();
+            let typst_array: Array = list.into_iter().map(typst_values_from_elxiir).collect();
+            typst_array.into_value()
+        }
+        rustler::TermType::Map => {
+            let map: HashMap<Term, Term> = term.decode().unwrap();
+            let mut dict = Dict::new();
+            for (key, value) in map {
+                let key_str = key.atom_to_string().unwrap();
+                dict.insert(Str::from(key_str), typst_values_from_elxiir(value));
+            }
+            dict.into_value()
+        }
+        rustler::TermType::Integer => {
+            let int: i64 = term.decode().unwrap();
+            int.into_value()
+        }
+        rustler::TermType::Float => {
+            let float: f64 = term.decode().unwrap();
+            float.into_value()
+        }
+        _ => Value::None, // Handle other types as needed
+    }
+}
+
+
 rustler::init!("Elixir.Imprintor");
