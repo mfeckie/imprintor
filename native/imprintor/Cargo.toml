@@ -10,8 +10,10 @@
 
 [dependencies]
   rustler = "0.36.2"
-  typst = "0.11.1"
-  typst-pdf = "0.11.1"
-  fontdb = "0.18.0"
+  typst = "0.13.1"
+  typst-kit = { version = "0.13.1", default-features = false, features = [
+    "embed-fonts",
+  ] }
+  typst-pdf = "0.13.1"
   comemo = "0.4"
   serde_json = "1.0"

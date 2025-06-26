@@ -42,7 +42,7 @@ defmodule Imprintor do
     # Convert data to JSON string
     case Jason.encode(data) do
       {:ok, json_string} ->
-        case compile_typst_to_pdf(template, json_string) do
+        case compile_typst_to_pdf(template, json_string, []) do
           {:ok, pdf_binary} -> {:ok, pdf_binary}
           {:error, reason} -> {:error, reason}
           pdf_binary when is_binary(pdf_binary) -> {:ok, pdf_binary}
@@ -108,5 +108,6 @@ defmodule Imprintor do
   end
 
   # Private NIF function - called by compile_to_pdf/2
-  def compile_typst_to_pdf(_template, _json_data), do: :erlang.nif_error(:nif_not_loaded)
+  def compile_typst_to_pdf(_template, _json_data, _extra_fonts),
+    do: :erlang.nif_error(:nif_not_loaded)
 end

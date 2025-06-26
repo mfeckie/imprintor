@@ -1,54 +1,33 @@
-use comemo::Prehashed;
-use fontdb::Database;
 use std::collections::HashMap;
 use typst::foundations::{Bytes, Datetime};
 use typst::syntax::{FileId, Source, VirtualPath};
 use typst::text::{Font, FontBook};
+use typst::utils::LazyHash;
 use typst::{Library, World};
+use typst_kit::fonts::{FontSlot, Fonts};
+use typst_pdf::PdfOptions;
 
 #[derive(Debug)]
 struct TypstWorld {
-    library: Prehashed<Library>,
-    book: Prehashed<FontBook>,
-    fonts: Vec<Font>,
+    source: Source,
+    library: LazyHash<Library>,
+    book: LazyHash<FontBook>,
+    fonts: Vec<FontSlot>,
     files: HashMap<FileId, Source>,
-    main: FileId,
 }
 
 impl TypstWorld {
-    fn new(main_content: &str, json_data: Option<String>) -> Self {
-        let mut db = Database::new();
-        db.load_system_fonts();
-
-        let mut fonts = Vec::new();
-        let mut book = FontBook::new();
-
-        // Load fewer fonts to speed up initialization
-        let mut font_count = 0;
-        for face in db.faces() {
-            if font_count >= 50 {
-                // Limit to first 50 fonts
-                break;
-            }
-
-            let data = match &face.source {
-                fontdb::Source::Binary(data) => data.as_ref().as_ref(),
-                fontdb::Source::File(path) => {
-                    if let Ok(data) = std::fs::read(path) {
-                        Box::leak(data.into_boxed_slice())
-                    } else {
-                        continue;
-                    }
-                }
-                _ => continue,
-            };
-
-            if let Some(font) = Font::new(Bytes::from(data), face.index) {
-                book.push(font.info().clone());
-                fonts.push(font);
-                font_count += 1;
-            }
-        }
+    fn new(
+        main_content: &str,
+        json_data: Option<String>,
+        extra_fonts: Option<Vec<String>>,
+    ) -> Self {
+        let font_searcher = match extra_fonts {
+            Some(fonts) => Fonts::searcher()
+                .include_system_fonts(true)
+                .search_with(fonts),
+            None => Fonts::searcher().include_system_fonts(true).search(),
+        };
 
         let main = FileId::new(None, VirtualPath::new("/main.typ"));
         let mut files = HashMap::new();
@@ -56,6 +35,7 @@ impl TypstWorld {
 
         // Create library with JSON data if provided
         let mut library = Library::default();
+
         if let Some(json_str) = json_data {
             if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&json_str) {
                 let typst_value = json_to_typst_value(json_value);
@@ -64,26 +44,26 @@ impl TypstWorld {
         }
 
         Self {
-            library: Prehashed::new(library),
-            book: Prehashed::new(book),
-            fonts,
+            source: Source::detached(main_content),
+            library: LazyHash::new(library),
+            book: LazyHash::new(font_searcher.book),
+            fonts: font_searcher.fonts,
             files,
-            main,
         }
     }
 }
 
 impl World for TypstWorld {
-    fn library(&self) -> &Prehashed<Library> {
+    fn library(&self) -> &LazyHash<Library> {
         &self.library
     }
 
-    fn book(&self) -> &Prehashed<FontBook> {
+    fn book(&self) -> &LazyHash<FontBook> {
         &self.book
     }
 
-    fn main(&self) -> Source {
-        self.source(self.main).unwrap()
+    fn main(&self) -> FileId {
+        self.source.id()
     }
 
     fn source(&self, id: FileId) -> typst::diag::FileResult<Source> {
@@ -100,7 +80,7 @@ impl World for TypstWorld {
     }
 
     fn font(&self, index: usize) -> Option<Font> {
-        self.fonts.get(index).cloned()
+        self.fonts[index].get()
     }
 
     fn today(&self, _offset: Option<i64>) -> Option<Datetime> {
@@ -143,12 +123,13 @@ fn compile_typst_to_pdf<'a>(
     env: rustler::Env<'a>,
     template: String,
     json_data: String,
+    extra_fonts: Vec<String>,
 ) -> Result<rustler::Binary<'a>, String> {
-    let world = TypstWorld::new(&template, Some(json_data));
+    let world = TypstWorld::new(&template, Some(json_data), Some(extra_fonts));
 
-    match typst::compile(&world, &mut Default::default()) {
+    match typst::compile(&world).output {
         Ok(document) => {
-            let pdf_bytes = typst_pdf::pdf(&document, typst::foundations::Smart::Auto, None);
+            let pdf_bytes = typst_pdf::pdf(&document, &PdfOptions::default()).unwrap();
             let mut binary = rustler::OwnedBinary::new(pdf_bytes.len()).unwrap();
             binary.as_mut_slice().copy_from_slice(&pdf_bytes);
             Ok(binary.release(env))
