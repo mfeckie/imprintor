@@ -76,9 +76,14 @@ impl World for TypstWorld {
     }
 
     fn file(&self, id: FileId) -> typst::diag::FileResult<Bytes> {
-        Err(typst::diag::FileError::NotFound(
-            id.vpath().as_rootless_path().into(),
-        ))
+        use std::fs;
+        use std::path::Path;
+        let path = id.vpath().as_rootless_path();
+        if let Ok(bytes) = fs::read(Path::new(&path)) {
+            Ok(Bytes::new(bytes))
+        } else {
+            Err(typst::diag::FileError::NotFound(path.into()))
+        }
     }
 
     fn font(&self, index: usize) -> Option<Font> {
