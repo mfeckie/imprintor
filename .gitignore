@@ -29,3 +29,5 @@ imprintor-*.tar
 /target/
 
 /priv/native
+
+native/imprintor/target
