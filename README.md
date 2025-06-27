@@ -5,11 +5,13 @@ A fast and efficient Elixir library for generating PDF documents from [Typst](ht
 ## Features
 
 - 🚀 **Fast PDF generation** using native Rust and Typst
-- 📄 **Template-based** document creation with JSON data integration
+- 📄 **Template-based** document creation with data integration
 - 🔧 **Simple API** for Elixir developers
-- 💾 **Flexible output** - generate PDFs in memory or save to files
+- 💾 **In-memory PDF generation** - returns PDF binary data
 - 📝 **Typst syntax** support for beautiful document formatting
-- 🧩 **Rich data support** - pass complex nested data structures as JSON
+- 🧩 **Rich data support** - pass complex nested data structures
+- 🔄 **Data iteration** - loop through arrays and nested objects in templates
+- 🎨 **Custom fonts** - support for additional font files
 
 ## Installation
 
@@ -28,20 +30,20 @@ end
 ### Basic PDF Generation
 
 ```elixir
-# Define a Typst template using json_data
+# Define a Typst template with data access
 template = """
-= Hello #json_data.name!
+= Hello #elixir_data.name!
 
-*Date:* #json_data.date
+*Date:* #elixir_data.date
 
 This is a sample document generated using Imprintor.
 
 == Details
 
 Here are some details:
-- *Name:* #json_data.name
-- *Email:* #json_data.email
-- *Age:* #json_data.age
+- *Name:* #elixir_data.name
+- *Email:* #elixir_data.email
+- *Age:* #elixir_data.age
 
 Thanks for using Imprintor!
 """
@@ -51,73 +53,68 @@ data = %{
   "name" => "John Doe",
   "date" => "2024-01-15",
   "email" => "john@example.com",
-  "age" => 30  # Note: can be numbers, strings, booleans, etc.
+  "age" => 30
 }
 
-# Generate PDF
-{:ok, pdf_binary} = Imprintor.compile_to_pdf(template, data)
+# Create a configuration and generate PDF
+config = Imprintor.Config.new(template, data)
+{:ok, pdf_binary} = Imprintor.compile_to_pdf(config)
 
 # Save to file
 File.write!("output.pdf", pdf_binary)
 ```
 
-### Save PDF Directly to File
+### Working with Complex Data and Iteration
 
 ```elixir
-template = "= My Document\n\nThis will be saved directly to a file."
-data = %{}
+# Template with data iteration using elixir_data
+template = """
+= Employee Directory
 
-:ok = Imprintor.compile_to_file(template, data, "my_document.pdf")
-```
+#for employee in elixir_data.employees [
+  == #employee.name
 
-### Load Template from File
+  *Position:* #employee.position
+  *Department:* #employee.department
+  *Email:* #employee.email
 
-Create a template file (`templates/invoice.typ`):
+  ---
+]
+"""
 
-```typst
-= Invoice #json_data.invoice_number
-
-*Date:* #json_data.date
-*To:* #json_data.client_name
-*From:* #json_data.company_name
-
-== Items
-
-#json_data.item_description
-
-*Total:* $#json_data.total
-
-Thank you for your business!
-```
-
-Then use it in your Elixir code:
-
-```elixir
+# Complex nested data structure
 data = %{
-  "invoice_number" => "12345",
-  "date" => "2024-01-15",
-  "client_name" => "Acme Corp",
-  "company_name" => "My Business",
-  "item_description" => "Web development services",
-  "total" => "2,500.00"
+  "employees" => [
+    %{
+      "name" => "Alice Johnson",
+      "position" => "Software Engineer", 
+      "department" => "Engineering",
+      "email" => "alice@company.com"
+    },
+    %{
+      "name" => "Bob Smith",
+      "position" => "Product Manager",
+      "department" => "Product", 
+      "email" => "bob@company.com"
+    }
+  ]
 }
 
-{:ok, pdf_binary} = Imprintor.compile_from_file("templates/invoice.typ", data)
-File.write!("invoice_12345.pdf", pdf_binary)
+config = Imprintor.Config.new(template, data)
+{:ok, pdf_binary} = Imprintor.compile_to_pdf(config)
+File.write!("employee_directory.pdf", pdf_binary)
 ```
 
 ## Template Syntax and Data Access
 
-Imprintor uses Typst syntax for document formatting. Data is made available in templates under the `json_data` variable.
+Imprintor uses Typst syntax for document formatting. Data is made available under the `elixir_data` variable:
 
-### Accessing Data
+- `#elixir_data.field_name` - Access simple fields
+- `#elixir_data.nested.field` - Access nested object fields  
+- `#for item in elixir_data.array [ ... ]` - Iterate over arrays
+- `#item.field` - Access fields within iteration loops
 
-- `#json_data.field_name` - Access simple fields
-- `#json_data.nested.field` - Access nested object fields  
-- `#json_data.array.at(0)` - Access array elements by index
-- `#json_data.array.len()` - Get array length
-
-### Complex Data Example
+### Data Access Example
 
 ```elixir
 data = %{
@@ -135,18 +132,20 @@ data = %{
 }
 
 template = """
-= Customer: #json_data.user.name
+= Customer: #elixir_data.user.name
 
 *Contact:*
-- Email: #json_data.user.contact.email
-- Phone: #json_data.user.contact.phone
+- Email: #elixir_data.user.contact.email
+- Phone: #elixir_data.user.contact.phone
 
 == Recent Orders
-*First Order:* #json_data.orders.at(0).product - $#json_data.orders.at(0).price
-*Second Order:* #json_data.orders.at(1).product - $#json_data.orders.at(1).price
-
-*Total Orders:* #json_data.orders.len()
+#for order in elixir_data.orders [
+  - #order.product: \\$#order.price
+]
 """
+
+config = Imprintor.Config.new(template, data)
+{:ok, pdf_binary} = Imprintor.compile_to_pdf(config)
 ```
 
 ### Common Typst Formatting
@@ -159,61 +158,132 @@ template = """
 - `- Item 1` - Bullet list
 - `1. Item 1` - Numbered list
 
-### Variable Substitution
+### Variable Substitution Syntax
 
-Variables in templates should be wrapped in double curly braces:
+Imprintor uses Typst syntax for data access:
 
 ```typst
-= Welcome {{user_name}}!
+= Customer Report
 
-Your email is {{email}} and you joined on {{join_date}}.
+*Name:* #elixir_data.customer.name
+*Email:* #elixir_data.customer.email
+
+== Orders
+#for order in elixir_data.orders [
+  - #order.product: \\$#order.total
+]
 ```
-
-All variable values are converted to strings before substitution.
 
 ## API Reference
 
-### `Imprintor.compile_to_pdf/2`
+### `Imprintor.compile_to_pdf/1`
 
 Compiles a Typst template with data and returns a PDF binary.
 
-- `template` - String containing the Typst template
-- `data` - Map of key-value pairs for variable substitution
+- `config` - An `Imprintor.Config` struct containing the template and data
 - Returns: `{:ok, pdf_binary}` or `{:error, reason}`
 
-### `Imprintor.compile_to_file/3`
+Example:
+```elixir
+config = Imprintor.Config.new(template, data)
+{:ok, pdf_binary} = Imprintor.compile_to_pdf(config)
+```
 
-Compiles a template and saves the PDF to a file.
+### `Imprintor.Config.new/3`
 
-- `template` - String containing the Typst template
-- `data` - Map of key-value pairs for variable substitution
-- `output_path` - File path where the PDF should be saved
-- Returns: `:ok` or `{:error, reason}`
+Creates a new configuration for PDF compilation.
 
-### `Imprintor.compile_from_file/2`
+- `source_document` - String containing the Typst template
+- `data` - Map of key-value pairs accessible via `elixir_data` in templates (optional, defaults to `%{}`)
+- `opts` - Keyword list of options (optional, defaults to `[]`)
+  - `:extra_fonts` - List of additional font paths
+  - `:root_directory` - Root directory for relative file paths (defaults to `"."`)
+- Returns: `%Imprintor.Config{}` struct
 
-Loads a template from a file and compiles it with data.
-
-- `template_path` - Path to the Typst template file
-- `data` - Map of key-value pairs for variable substitution
-- Returns: `{:ok, pdf_binary}` or `{:error, reason}`
+Example:
+```elixir
+config = Imprintor.Config.new(
+  template, 
+  %{"name" => "John"}, 
+  extra_fonts: ["/path/to/font.ttf"],
+  root_directory: "/project/templates"
+)
+```
 
 ## Examples
 
-Check out the `ImprintorExamples` module for more examples:
+### Basic Example
 
 ```elixir
-# Run basic examples
-ImprintorExamples.basic_example()
-ImprintorExamples.template_file_example()
-ImprintorExamples.save_to_file_example()
+# Simple template with data access
+template = "= Hello #elixir_data.name\n\nThis is a test document."
+data = %{"name" => "World"}
+
+config = Imprintor.Config.new(template, data)
+{:ok, pdf_binary} = Imprintor.compile_to_pdf(config)
+File.write!("hello.pdf", pdf_binary)
 ```
 
-## Requirements
+### List Iteration Example
 
-- Elixir 1.17+
-- Rust (for compilation)
-- System fonts (automatically detected)
+```elixir
+template = """
+= Simple List Test
+
+#for item in elixir_data.items [
+  - #item
+]
+"""
+
+data = %{"items" => ["Apple", "Banana", "Cherry"]}
+config = Imprintor.Config.new(template, data)
+{:ok, pdf_binary} = Imprintor.compile_to_pdf(config)
+```
+
+### Complex Data Example
+
+```elixir
+template = """
+= Sales Report
+
+#for region in elixir_data.regions [
+  == #region.name Region
+
+  *Total Sales:* \\$#region.total_sales
+
+  === Products
+  #for product in region.products [
+    - #product.name: \\$#product.revenue
+  ]
+
+  ---
+]
+"""
+
+data = %{
+  "regions" => [
+    %{
+      "name" => "North",
+      "total_sales" => 125_000,
+      "products" => [
+        %{"name" => "Widget A", "revenue" => 45000},
+        %{"name" => "Widget B", "revenue" => 35000}
+      ]
+    },
+    %{
+      "name" => "South", 
+      "total_sales" => 98000,
+      "products" => [
+        %{"name" => "Widget C", "revenue" => 55000},
+        %{"name" => "Widget D", "revenue" => 43000}
+      ]
+    }
+  ]
+}
+
+config = Imprintor.Config.new(template, data)
+{:ok, pdf_binary} = Imprintor.compile_to_pdf(config)
+```
 
 ## Performance
 
@@ -235,8 +305,10 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ### 0.1.0
 
 - Initial release
-- Basic Typst template compilation
-- PDF generation with variable substitution
-- File I/O operations
+- Basic Typst template compilation using native Rust
+- PDF generation with data access using `elixir_data` variable  
+- Support for nested data structures and array iteration
+- Configuration-based API with `Imprintor.Config`
+- Custom fonts support
 - Comprehensive test suite
 
