@@ -203,7 +203,7 @@ defmodule ImprintorTest do
     = Product Catalog
 
     #for product in elixir_data.products [
-      *Price:* \\$ #product.price
+      *Price:* \\#product.price
       *Quantity:* #product.quantity
       ---
     ]
@@ -242,6 +242,42 @@ defmodule ImprintorTest do
       {:error, reason} ->
         flunk(
           "Expected successful PDF generation with product catalog, got error: #{inspect(reason)}"
+        )
+    end
+  end
+
+  test "compile_to_pdf with typst package (QR code)" do
+    template = """
+    #import "@preview/cades:0.3.0": qr-code
+
+    = QR Code Test
+
+    This is a test of the qr-code plugin.
+
+    #qr-code("https://typst.app")
+
+    == Additional Info
+
+    *Website:* #elixir_data.website
+    *Generated on:* #elixir_data.date
+    """
+
+    data = %{
+      "website" => "https://typst.app",
+      "date" => "2024-01-15"
+    }
+
+    config = Imprintor.Config.new(template, data)
+
+    case Imprintor.compile_to_pdf(config) do
+      {:ok, pdf_binary} ->
+        assert is_binary(pdf_binary)
+        assert byte_size(pdf_binary) > 0
+        assert String.starts_with?(pdf_binary, "%PDF")
+
+      {:error, reason} ->
+        flunk(
+          "Expected successful PDF generation with Typst package, got error: #{inspect(reason)}"
         )
     end
   end
