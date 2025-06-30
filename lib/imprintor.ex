@@ -44,7 +44,6 @@ defmodule Imprintor do
     * `{:ok, pdf_binary}` - Successfully compiled PDF as binary data
     * `{:error, reason}` - Compilation failed with error reason
   """
-  @spec compile_to_pdf(Imprintor.Config.t()) :: {:ok, binary()} | {:error, any()}
   def compile_to_pdf(%Imprintor.Config{} = config) do
     case typst_to_pdf(config) do
       {:ok, pdf_binary} -> {:ok, pdf_binary}
