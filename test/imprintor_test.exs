@@ -99,11 +99,11 @@ defmodule ImprintorTest do
     #for region in elixir_data.regions [
       == #region.name Region
 
-      *Total Sales:* \\$#region.total_sales
+      *Total Sales:* \\#region.total_sales
 
       === Products
       #for product in region.products [
-        - #product.name: \\$#product.revenue
+        - #product.name: \\#product.revenue
       ]
 
       ---
@@ -280,6 +280,48 @@ defmodule ImprintorTest do
         flunk(
           "Expected successful PDF generation with Typst package, got error: #{inspect(reason)}"
         )
+    end
+  end
+
+  test "compile_to_pdf with atom keys in data structure" do
+    template = """
+    = {{title}}
+
+    *Author:* {{author}}
+    *Version:* {{version}}
+
+    == Features
+
+    #for feature in elixir_data.features [
+      - #feature.name: #feature.description
+    ]
+
+    == Status
+    *Ready:* {{ready}}
+    """
+
+    data = %{
+      title: "Project Documentation",
+      author: "Development Team",
+      version: "1.0.0",
+      ready: true,
+      features: [
+        %{name: "Authentication", description: "User login and registration"},
+        %{name: "Dashboard", description: "Main application interface"},
+        %{name: "Reports", description: "Data visualization and export"}
+      ]
+    }
+
+    config = Imprintor.Config.new(template, data)
+
+    case Imprintor.compile_to_pdf(config) do
+      {:ok, pdf_binary} ->
+        assert is_binary(pdf_binary)
+        assert byte_size(pdf_binary) > 0
+        assert String.starts_with?(pdf_binary, "%PDF")
+
+      {:error, reason} ->
+        flunk("Expected successful PDF generation with atom keys, got error: #{inspect(reason)}")
     end
   end
 end
