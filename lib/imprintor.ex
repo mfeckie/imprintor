@@ -27,8 +27,25 @@ defmodule Imprintor do
     ]
 
   @doc """
+  Compiles a Typst template to a PDF document.
+
+  Takes an `Imprintor.Config` struct containing the template configuration and
+  returns a binary containing the compiled PDF data.
+
+  ## Parameters
+
+    * `config` - An `%Imprintor.Config{}` struct containing:
+      * Template source or file path
+      * Data for interpolation
+      * Compilation options
+
+  ## Returns
+
+    * `{:ok, pdf_binary}` - Successfully compiled PDF as binary data
+    * `{:error, reason}` - Compilation failed with error reason
   """
-  def compile_to_pdf(config) do
+  @spec compile_to_pdf(Imprintor.Config.t()) :: {:ok, binary()} | {:error, any()}
+  def compile_to_pdf(%Imprintor.Config{} = config) do
     case typst_to_pdf(config) do
       {:ok, pdf_binary} -> {:ok, pdf_binary}
       {:error, reason} -> {:error, reason}
@@ -36,8 +53,6 @@ defmodule Imprintor do
       error -> {:error, error}
     end
   end
-
-  # Private NIF function - called by compile_to_pdf/2
 
   def typst_to_pdf(_config), do: :erlang.nif_error(:nif_not_loaded)
 end

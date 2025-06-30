@@ -1,5 +1,6 @@
 defmodule ImprintorTest do
   use ExUnit.Case
+  doctest Imprintor
 
   test "compile_to_pdf with simple template" do
     template = "= Hello {{name}}\n\nThis is a test document."

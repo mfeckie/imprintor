@@ -31,3 +31,5 @@ imprintor-*.tar
 /priv/native
 
 native/imprintor/target
+
+checksum-*.exs
