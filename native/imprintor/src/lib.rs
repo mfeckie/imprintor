@@ -192,8 +192,7 @@ fn http_successful(status: u16) -> bool {
 fn typst_values_from_elxiir(term: Term) -> typst::foundations::Value {
     match term.get_type() {
         rustler::TermType::Atom => {
-            let atom: String = term.decode().unwrap();
-
+            let atom = term.atom_to_string().unwrap();
             Value::Str(atom.into())
         }
         rustler::TermType::Binary => {
@@ -212,7 +211,7 @@ fn typst_values_from_elxiir(term: Term) -> typst::foundations::Value {
 
             for (key, value) in map {
                 let key_str = match key.get_type() {
-                    rustler::TermType::Atom => key.decode::<String>().unwrap(),
+                    rustler::TermType::Atom => key.atom_to_string().unwrap(),
                     rustler::TermType::Binary => {
                         let binary: binary::Binary = key.decode().unwrap();
                         String::from_utf8(binary.to_vec()).unwrap()
