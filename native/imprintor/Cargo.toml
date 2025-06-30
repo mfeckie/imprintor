@@ -9,7 +9,9 @@
   crate-type = ["cdylib"]
 
 [dependencies]
-  rustler = "0.36.2"
+  rustler = { version = "0.36.2", default-features = false, features = [
+    "derive",
+  ] }
   typst = "0.13.1"
   typst-kit = { version = "0.13.1", default-features = false, features = [
     "embed-fonts",
@@ -20,3 +22,9 @@
   ureq = "2.10.1"
   tar = "0.4.43"
   zune-inflate = "0.2.54"
+
+[features]
+  default = ["nif_version_2_15"]
+  nif_version_2_15 = ["rustler/nif_version_2_15"]
+  nif_version_2_16 = ["rustler/nif_version_2_16"]
+  nif_version_2_17 = ["rustler/nif_version_2_17"]

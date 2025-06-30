@@ -1,13 +1,18 @@
 defmodule Imprintor.MixProject do
   use Mix.Project
 
+  @version "0.1.0"
+  @source_url "https://github.com/mfeckie/imprintor"
+
   def project do
     [
       app: :imprintor,
-      version: "0.1.0",
+      description: "Imprintor is a library for generating PDF documents from Typst templates.",
+      deps: deps(),
       elixir: "~> 1.17",
+      package: package(),
       start_permanent: Mix.env() == :prod,
-      deps: deps()
+      version: @version
     ]
   end
 
@@ -15,6 +20,22 @@ defmodule Imprintor.MixProject do
   def application do
     [
       extra_applications: [:logger]
+    ]
+  end
+
+  defp package do
+    [
+      licenses: ["MIT"],
+      links: %{"GitHub" => @source_url},
+      files: [
+        "lib",
+        "native",
+        "checksum-*.exs",
+        "mix.exs"
+      ],
+      exclude_patterns: [
+        "native/imprintor/target"
+      ]
     ]
   end
 
