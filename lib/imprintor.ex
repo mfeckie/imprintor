@@ -14,20 +14,17 @@ defmodule Imprintor do
     crate: :imprintor,
     version: version,
     base_url: "https://github.com/mfeckie/imprintor/releases/download/#{version}",
-    force_build: System.get_env("FORCE_COMPILE") in ["true", "1"]
-
-  # nif_versions: [
-  #   "2.15",
-  #   "2.16",
-  #   "2.17"
-  # ],
-  # targets: [
-  #   "aarch64-apple-darwin",
-  #   "aarch64-unknown-linux-gnu",
-  #   "aarch64-unknown-linux-musl",
-  #   "x86_64-unknown-linux-gnu",
-  #   "x86_64-unknown-linux-musl"
-  # ]
+    force_build: System.get_env("FORCE_COMPILE") in ["true", "1"],
+    nif_versions: [
+      "2.15",
+      "2.16",
+      "2.17"
+    ],
+    targets: [
+      "aarch64-apple-darwin",
+      "x86_64-unknown-linux-gnu",
+      "x86_64-unknown-linux-musl"
+    ]
 
   @doc """
   """
