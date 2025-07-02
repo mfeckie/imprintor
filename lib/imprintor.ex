@@ -24,8 +24,7 @@ defmodule Imprintor do
       "aarch64-apple-darwin",
       "x86_64-unknown-linux-gnu",
       "x86_64-unknown-linux-musl"
-    ],
-    mode: if(Mix.env() == :test, do: :debug, else: :release)
+    ]
 
   @doc """
   Compiles a Typst template to a PDF document.
