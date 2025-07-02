@@ -324,4 +324,114 @@ defmodule ImprintorTest do
         flunk("Expected successful PDF generation with atom keys, got error: #{inspect(reason)}")
     end
   end
+
+  test "compile_to_pdf with large file - 500 items with images and QR codes" do
+    template = """
+    #let qr = plugin("test/typst_plugin_qr.wasm")
+    #import "@preview/tiaoma:0.3.0"
+
+    = Large Inventory Report
+
+    *Generated:* #elixir_data.generated_date
+    *Total Items:* #elixir_data.total_items
+
+    == Product Inventory
+
+    #for item in elixir_data.items [
+      === Product \\#item.id: #item.name
+
+      #grid(
+        columns: (1fr, 1fr),
+        gutter: 1em,
+        [
+          *SKU:* #item.sku \
+          *Category:* #item.category \
+          *Price:* \\$#item.price \
+          *Stock:* #item.stock_quantity \
+          *Status:* #item.status
+        ],
+        [
+          *QR Code:* \
+          #tiaoma.barcode("asdfasdf", "QRCode")
+        ]
+      )
+
+      *Description:* #item.description
+
+      *Product Image:*
+      #rect(
+        width: 4cm,
+        height: 3cm,
+        fill: gradient.linear(rgb("#e1f5fe"), rgb("#bbdefb")),
+        stroke: 1pt + gray,
+        [
+          #align(center + horizon)[
+            #text(size: 0.8em, fill: gray)[
+              Image: #item.image_url
+            ]
+          ]
+        ]
+      )
+
+      *Barcode:* #item.barcode
+
+      #line(length: 100%, stroke: 0.5pt + gray)
+      #v(0.5em)
+    ]
+
+    == Summary Statistics
+
+    *Total Value:* \\$#elixir_data.total_value
+    *Categories:* #elixir_data.category_count
+    *Low Stock Items:* #elixir_data.low_stock_count
+    """
+
+    # Generate data for 500 items
+    items =
+      Enum.map(1..500, fn i ->
+        %{
+          id: i,
+          name: "Product #{i}",
+          sku: "SKU-#{String.pad_leading(Integer.to_string(i), 6, "0")}",
+          category: Enum.random(["Electronics", "Clothing", "Home & Garden", "Sports", "Books"]),
+          price: :rand.uniform(1000) + 10,
+          stock_quantity: :rand.uniform(100),
+          status: if(:rand.uniform() > 0.8, do: "Low Stock", else: "In Stock"),
+          description: "High-quality product #{i} with excellent features and durability.",
+          qr_data: "https://inventory.example.com/product/#{i}",
+          image_url: "product_#{i}.jpg",
+          barcode: "#{:rand.uniform(999_999_999_999)}"
+        }
+      end)
+
+    total_value = Enum.reduce(items, 0, fn item, acc -> acc + item.price end)
+    categories = items |> Enum.map(& &1.category) |> Enum.uniq() |> length()
+    low_stock_count = Enum.count(items, fn item -> item.status == "Low Stock" end)
+
+    data = %{
+      generated_date: "2025-07-01",
+      total_items: 500,
+      items: items,
+      total_value: total_value,
+      category_count: categories,
+      low_stock_count: low_stock_count
+    }
+
+    config = Imprintor.Config.new(template, data)
+
+    case Imprintor.compile_to_pdf(config) do
+      {:ok, pdf_binary} ->
+        assert is_binary(pdf_binary)
+        assert byte_size(pdf_binary) > 0
+        assert String.starts_with?(pdf_binary, "%PDF")
+        # Verify it's a substantial file due to 500 items
+        # Should be at least 100KB
+        assert byte_size(pdf_binary) > 100_000
+
+      {:error, reason} ->
+        flunk(
+          "Expected successful PDF generation with large file (500 items), got error: #{inspect(reason)}"
+        )
+    end
+  end
 end
