@@ -283,7 +283,7 @@ impl typst::World for ImprintorNifWorld {
     }
 }
 
-#[rustler::nif]
+#[rustler::nif(schedule = "DirtyCpu")]
 fn typst_to_pdf<'a>(
     env: rustler::Env<'a>,
     config: ImprintorConfig,
