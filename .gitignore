@@ -33,3 +33,5 @@ imprintor-*.tar
 native/imprintor/target
 
 checksum-*.exs
+
+.DS_Store
