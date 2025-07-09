@@ -12,7 +12,13 @@ defmodule Imprintor.MixProject do
       elixir: "~> 1.17",
       package: package(),
       start_permanent: Mix.env() == :prod,
-      version: @version
+      version: @version,
+      docs: [
+        source_url: @source_url,
+        source_ref: @version,
+        extras: ["README.md"],
+        main: "readme"
+      ]
     ]
   end
 
