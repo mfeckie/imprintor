@@ -40,10 +40,10 @@ jobs:
             }
 
     steps:
-      - name: Install dependency
-        run: |
-          sudo apt get update
-          sudo apt get install -y gcc-aarch64-linux-gnu
+      - name: Install Package
+        uses: ConorMacBride/install-package@v1.1.0
+        with:
+          apt: gcc-arch64-linux-gnu
       - name: Checkout source code
         uses: actions/checkout@v3
 
