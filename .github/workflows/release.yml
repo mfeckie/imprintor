@@ -29,7 +29,7 @@ jobs:
           - {
               target: aarch64-unknown-linux-gnu,
               os: ubuntu-22.04,
-              cargo-args: "--profile apple-docker",
+              use-cross: true,
             }
           - {
               target: arm-unknown-linux-gnueabihf,
