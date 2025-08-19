@@ -129,8 +129,6 @@ impl ImprintorNifWorld {
         let package_subdir = format!("{}/{}/{}", package.namespace, package.name, package.version);
         let path = self.cache_directory.join(package_subdir);
 
-        let http = ureq::Agent::new();
-
         if path.exists() {
             return Ok(path);
         }
@@ -141,14 +139,13 @@ impl ImprintorNifWorld {
             package.namespace, package.name, package.version,
         );
 
-        let response = retry(|| {
-            let response = http
-                .get(&url)
+        let mut response = retry(|| {
+            let response = ureq::get(&url)
                 .call()
                 .map_err(|error| eco_format!("{error}"))?;
 
             let status = response.status();
-            if !http_successful(status) {
+            if !http_successful(status.into()) {
                 return Err(eco_format!(
                     "response returned unsuccessful status code {status}",
                 ));
@@ -158,15 +155,17 @@ impl ImprintorNifWorld {
         })
         .map_err(|error| PackageError::NetworkFailed(Some(error)))?;
 
-        let mut compressed_archive = Vec::new();
-        response
-            .into_reader()
-            .read_to_end(&mut compressed_archive)
+        let compressed_archive = response
+            .body_mut()
+            .read_to_vec()
             .map_err(|error| PackageError::NetworkFailed(Some(eco_format!("{error}"))))?;
+
         let raw_archive = zune_inflate::DeflateDecoder::new(&compressed_archive)
             .decode_gzip()
             .map_err(|error| PackageError::MalformedArchive(Some(eco_format!("{error}"))))?;
+
         let mut archive = tar::Archive::new(raw_archive.as_slice());
+
         archive.unpack(&path).map_err(|error| {
             _ = std::fs::remove_dir_all(&path);
             PackageError::MalformedArchive(Some(eco_format!("{error}")))
