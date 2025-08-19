@@ -43,7 +43,7 @@ jobs:
       - name: Install Package
         uses: ConorMacBride/install-package@v1.1.0
         with:
-          apt: gcc-arch64-linux-gnu
+          apt: gcc-aarch64-linux-gnu
       - name: Checkout source code
         uses: actions/checkout@v3
 
