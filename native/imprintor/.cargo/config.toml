@@ -10,8 +10,4 @@
   rustflags = ["-C", "target-feature=-crt-static"]
 
 [profile.release]
-  lto = true
-
-[profile.apple-docker]
-  inherits = "release"
   lto = "thin"
