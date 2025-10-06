@@ -32,6 +32,11 @@ jobs:
               use-cross: true,
             }
           - {
+              target: aarch64-unknown-linux-musl,
+              os: ubuntu-22.04,
+              use-cross: true,
+            }
+          - {
               target: arm-unknown-linux-gnueabihf,
               os: ubuntu-22.04,
               use-cross: true,
