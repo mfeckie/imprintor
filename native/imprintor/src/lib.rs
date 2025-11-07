@@ -11,7 +11,7 @@ use typst::syntax::package::PackageSpec;
 use typst::syntax::{FileId, Source};
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
-use typst::Library;
+use typst::{Library, LibraryExt};
 use typst_kit::fonts::{FontSlot, Fonts};
 use typst_pdf::PdfOptions;
 /// A File that will be stored in the HashMap.
