@@ -1,3 +1,15 @@
+## Changelog
+
+### 0.1.0
+
+- Initial release
+- Basic Typst template compilation using native Rust
+- PDF generation with data access using `elixir_data` variable  
+- Support for nested data structures and array iteration
+- Configuration-based API with `Imprintor.Config`
+- Custom fonts support
+- Comprehensive test suite
+
 ## 0.3.0
 
 Breaking Change - All externally supplied data is now to be accessed via `sys.inputs.elixir_data`, this is to make things more in keeping with how the CLI for Typst works.

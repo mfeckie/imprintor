@@ -128,16 +128,3 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 2. Create a feature branch
 3. Add tests for new functionality
 4. Submit a pull request
-
-## Changelog
-
-### 0.1.0
-
-- Initial release
-- Basic Typst template compilation using native Rust
-- PDF generation with data access using `elixir_data` variable  
-- Support for nested data structures and array iteration
-- Configuration-based API with `Imprintor.Config`
-- Custom fonts support
-- Comprehensive test suite
-

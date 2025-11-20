@@ -55,6 +55,21 @@ defmodule Imprintor do
     end
   end
 
+  @doc """
+  Compiles a Typst template to a PDF file.
+
+  Takes an `Imprintor.Config` struct and an output file path, compiles the
+  template, and writes the resulting PDF to the specified file. 
+
+  ## Parameters
+
+    * `config` - An `%Imprintor.Config{}` struct containing:
+      * Template source or file path
+      * Data for interpolation
+      * Compilation options
+    * `output_path` - A string specifying the file path to write the PDF to
+  """
+
   def compile_to_pdf_file(%Imprintor.Config{} = config, output_path)
       when is_binary(output_path) do
     case typst_to_pdf_file(config, output_path) do
