@@ -1,7 +1,7 @@
 defmodule Imprintor.MixProject do
   use Mix.Project
 
-  @version "0.2.0"
+  @version "0.3.0"
   @source_url "https://github.com/mfeckie/imprintor"
 
   def project do
