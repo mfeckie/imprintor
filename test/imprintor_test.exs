@@ -459,4 +459,33 @@ defmodule ImprintorTest do
         )
     end
   end
+
+  describe "Direct to file" do
+    setup do
+      on_exit(fn ->
+        File.rm("test_output.pdf")
+      end)
+
+      :ok
+    end
+
+    test "compile_to_pdf_file writes PDF to specified file" do
+      template = "= Hello File Output\n\nThis document is written directly to a file."
+      data = %{"name" => "File Output"}
+
+      config = Imprintor.Config.new(template, data)
+
+      case Imprintor.typst_to_pdf_file(config, "test_output.pdf") do
+        {:ok, "test_output.pdf"} ->
+          assert File.exists?("test_output.pdf")
+          {:ok, pdf_binary} = File.read("test_output.pdf")
+          assert is_binary(pdf_binary)
+          assert byte_size(pdf_binary) > 0
+          assert String.starts_with?(pdf_binary, "%PDF")
+
+        {:error, reason} ->
+          flunk("Expected successful PDF file generation, got error: #{inspect(reason)}")
+      end
+    end
+  end
 end

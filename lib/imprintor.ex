@@ -56,4 +56,5 @@ defmodule Imprintor do
   end
 
   def typst_to_pdf(_config), do: :erlang.nif_error(:nif_not_loaded)
+  def typst_to_pdf_file(_config, _output_path), do: :erlang.nif_error(:nif_not_loaded)
 end

@@ -21,6 +21,11 @@ struct FileEntry {
     source: Option<Source>,
 }
 
+rustler::atoms! {
+    ok,
+    error,
+}
+
 impl FileEntry {
     fn new(bytes: Vec<u8>, source: Option<Source>) -> Self {
         Self {
@@ -295,6 +300,29 @@ fn typst_to_pdf<'a>(
             let mut binary = rustler::OwnedBinary::new(pdf_bytes.len()).unwrap();
             binary.as_mut_slice().copy_from_slice(&pdf_bytes);
             Ok(binary.release(env))
+        }
+        Err(errors) => {
+            let error_msg = errors
+                .iter()
+                .map(|e| format!("{:?}", e))
+                .collect::<Vec<_>>()
+                .join(", ");
+            Err(format!("Compilation failed: {}", error_msg))
+        }
+    }
+}
+
+#[rustler::nif(schedule = "DirtyCpu")]
+fn typst_to_pdf_file<'a>(config: ImprintorConfig, output_path: String) -> Result<String, String> {
+    let world = ImprintorNifWorld::new(config);
+
+    match typst::compile(&world).output {
+        Ok(document) => {
+            let pdf_bytes = typst_pdf::pdf(&document, &PdfOptions::default()).unwrap();
+            match std::fs::write(&output_path, pdf_bytes) {
+                Ok(_) => Ok(output_path.into()),
+                Err(err) => Err(err.to_string().into()),
+            }
         }
         Err(errors) => {
             let error_msg = errors
