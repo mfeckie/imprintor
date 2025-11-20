@@ -72,16 +72,16 @@ impl ImprintorNifWorld {
                 .search_with(fonts),
             None => Fonts::searcher().include_system_fonts(true).search(),
         };
-        let mut library = Library::default();
+
+        let mut dict = Dict::new();
 
         if let Some(elixir_data) = config.data {
             let typst_value = typst_values_from_elxiir(elixir_data);
 
-            library
-                .global
-                .scope_mut()
-                .define("elixir_data", typst_value);
+            dict.insert("elixir_data".into(), typst_value);
         }
+
+        let library = Library::builder().with_inputs(dict).build();
 
         let cache_directory = std::env::var_os("CACHE_DIRECTORY")
             .map(|os_path| os_path.into())

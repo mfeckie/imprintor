@@ -68,7 +68,7 @@ defmodule ImprintorTest do
     template = """
     = Simple List Test
 
-    #for item in elixir_data.items [
+    #for item in sys.inputs.elixir_data.items [
       - #item
     ]
     """
@@ -96,7 +96,7 @@ defmodule ImprintorTest do
     template = """
     = Sales Report
 
-    #for region in elixir_data.regions [
+    #for region in sys.inputs.elixir_data.regions [
       == #region.name Region
 
       *Total Sales:* \\#region.total_sales
@@ -150,7 +150,7 @@ defmodule ImprintorTest do
     template = """
     = Employee Directory
 
-    #for employee in elixir_data.employees [
+    #for employee in sys.inputs.elixir_data.employees [
       == #employee.name
 
       *Position:* #employee.position
@@ -203,7 +203,7 @@ defmodule ImprintorTest do
     template = """
     = Product Catalog
 
-    #for product in elixir_data.products [
+    #for product in sys.inputs.elixir_data.products [
       *Price:* \\#product.price
       *Quantity:* #product.quantity
       ---
@@ -249,7 +249,7 @@ defmodule ImprintorTest do
 
   test "compile_to_pdf with typst package (QR code)" do
     template = """
-    #import "@preview/cades:0.3.0": qr-code
+    #import "@preview/cades:0.3.1": qr-code
 
     = QR Code Test
 
@@ -259,8 +259,8 @@ defmodule ImprintorTest do
 
     == Additional Info
 
-    *Website:* #elixir_data.website
-    *Generated on:* #elixir_data.date
+    *Website:* #sys.inputs.elixir_data.website
+    *Generated on:* #sys.inputs.elixir_data.date
     """
 
     data = %{
@@ -292,7 +292,7 @@ defmodule ImprintorTest do
 
     == Features
 
-    #for feature in elixir_data.features [
+    #for feature in sys.inputs.elixir_data.features [
       - #feature.name: #feature.description
     ]
 
@@ -332,12 +332,12 @@ defmodule ImprintorTest do
 
     = Large Inventory Report
 
-    *Generated:* #elixir_data.generated_date
-    *Total Items:* #elixir_data.total_items
+    *Generated:* #sys.inputs.elixir_data.generated_date
+    *Total Items:* #sys.inputs.elixir_data.total_items
 
     == Product Inventory
 
-    #for item in elixir_data.items [
+    #for item in sys.inputs.elixir_data.items [
       === Product \\#item.id: #item.name
 
       #grid(
@@ -381,9 +381,9 @@ defmodule ImprintorTest do
 
     == Summary Statistics
 
-    *Total Value:* \\$#elixir_data.total_value
-    *Categories:* #elixir_data.category_count
-    *Low Stock Items:* #elixir_data.low_stock_count
+    *Total Value:* \\$#sys.inputs.elixir_data.total_value
+    *Categories:* #sys.inputs.elixir_data.category_count
+    *Low Stock Items:* #sys.inputs.elixir_data.low_stock_count
     """
 
     # Generate data for 500 items
