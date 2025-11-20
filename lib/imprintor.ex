@@ -55,6 +55,15 @@ defmodule Imprintor do
     end
   end
 
+  def compile_to_pdf_file(%Imprintor.Config{} = config, output_path)
+      when is_binary(output_path) do
+    case typst_to_pdf_file(config, output_path) do
+      {:ok, _path} = result -> result
+      {:error, reason} -> {:error, reason}
+      error -> {:error, error}
+    end
+  end
+
   def typst_to_pdf(_config), do: :erlang.nif_error(:nif_not_loaded)
   def typst_to_pdf_file(_config, _output_path), do: :erlang.nif_error(:nif_not_loaded)
 end
