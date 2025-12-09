@@ -38,9 +38,9 @@ This is a sample document generated using Imprintor.
 == Details
 
 Here are some details:
-- *Name:* #elixir_data.name
-- *Email:* #elixir_data.email
-- *Age:* #elixir_data.age
+- *Name:* #sys.inputs.elixir_data.name
+- *Email:* #sys.inputs.elixir_data.email
+- *Age:* #sys.inputs.elixir_data.age
 
 Thanks for using Imprintor!
 """
@@ -68,7 +68,7 @@ File.write!("output.pdf", pdf_binary)
 template = """
 = Employee Directory
 
-#for employee in elixir_data.employees [
+#for employee in sys.inputs.elixir_data.employees [
   == #employee.name
 
   *Position:* #employee.position
@@ -109,11 +109,11 @@ Imprintor uses Typst syntax for data access:
 ```typst
 = Customer Report
 
-*Name:* #elixir_data.customer.name
-*Email:* #elixir_data.customer.email
+*Name:* #sys.inputs.elixir_data.customer.name
+*Email:* #sys.inputs.elixir_data.customer.email
 
 == Orders
-#for order in elixir_data.orders [
+#for order in sys.inputs.elixir_data.orders [
   - #order.product: \\$#order.total
 ]
 ```
