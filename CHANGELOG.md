@@ -20,3 +20,9 @@ If you were previously accessing `elixir_data` global, just change to `sys.input
 ## 0.4.0
 
 - **Added:** `Imprintor.compile_to_pdf_file/2` — convenience function to compile a Typst template and write the resulting PDF directly to disk (returns `{:ok, path}` or `{:error, reason}`).
+
+## 0.5.0
+
+- Adds windows as a precompiled target [via](https://github.com/mfeckie/imprintor/pull/11)
+- Bumps typst to 0.14.2
+- Updates dependencies
