@@ -325,6 +325,47 @@ defmodule ImprintorTest do
     end
   end
 
+  test "compile_to_pdf with configured pdf standard" do
+    template = """
+    #set document(date: datetime.today())
+
+    = PDF Standard Test
+
+    This document should compile with an explicit PDF standard.
+    """
+
+    config = Imprintor.Config.new(template, %{}, pdf_standard: "1.7")
+
+    case Imprintor.compile_to_pdf(config) do
+      {:ok, pdf_binary} ->
+        assert is_binary(pdf_binary)
+        assert byte_size(pdf_binary) > 0
+        assert String.starts_with?(pdf_binary, "%PDF")
+
+      {:error, reason} ->
+        flunk(
+          "Expected successful PDF generation with pdf_standard, got error: #{inspect(reason)}"
+        )
+    end
+  end
+
+  test "compile_to_pdf with invalid pdf standard returns error" do
+    template = "= Invalid PDF Standard"
+    config = Imprintor.Config.new(template, %{}, pdf_standard: "not-a-real-standard")
+
+    case Imprintor.compile_to_pdf(config) do
+      {:ok, _pdf_binary} ->
+        flunk("Expected error for invalid pdf_standard, but compilation succeeded")
+
+      {:error, reason} ->
+        assert inspect(reason) =~ "Unsupported PDF standard"
+
+      error ->
+        flunk("Expected error tuple for invalid pdf_standard, got: #{inspect(error)}")
+    end
+  end
+
+
   test "compile_to_pdf with large file - 500 items with images and QR codes" do
     template = """
     #let qr = plugin("test/typst_plugin_qr.wasm")

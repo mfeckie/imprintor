@@ -12,6 +12,7 @@ defmodule Imprintor.Config do
   * `:extra_fonts` - A list of additional font files or paths to include
   * `:root_directory` - The root directory for resolving relative paths (defaults to ".")
   * `:data` - A map containing template data and variables for document generation
+  * `:pdf_standard` - Optional PDF standard string (e.g. `"a-3a"`, `"ua-1"`, `"1.7"`)
 
   ## Examples
 
@@ -31,7 +32,7 @@ defmodule Imprintor.Config do
       ])
   """
 
-  defstruct [:source_document, :extra_fonts, :root_directory, :data]
+  defstruct [:source_document, :extra_fonts, :root_directory, :data, :pdf_standard]
 
   @doc """
   Creates a new configuration struct.
@@ -46,6 +47,7 @@ defmodule Imprintor.Config do
 
   * `:extra_fonts` - List of additional font files to include (defaults to `[]`)
   * `:root_directory` - Root directory for resolving relative paths (defaults to `"."`)
+  * `:pdf_standard` - PDF standard to enforce (defaults to `nil` / Typst default)
 
   ## Returns
 
@@ -79,11 +81,14 @@ defmodule Imprintor.Config do
 
     root_directory = Keyword.get(opts, :root_directory, ".")
 
+    pdf_standard = Keyword.get(opts, :pdf_standard)
+
     %__MODULE__{
       source_document: source_document,
       extra_fonts: extra_fonts,
       root_directory: root_directory,
-      data: data
+      data: data,
+      pdf_standard: pdf_standard
     }
   end
 end
