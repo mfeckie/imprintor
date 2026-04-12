@@ -210,6 +210,18 @@ fn typst_values_from_elxiir(term: Term) -> typst::foundations::Value {
             let typst_array: Array = list.into_iter().map(typst_values_from_elxiir).collect();
             Value::Array(typst_array)
         }
+        rustler::TermType::Tuple => {
+            let tuple: (Term, Term) = term.decode().unwrap();
+
+            if tuple.0.get_type() == rustler::TermType::Atom
+                && tuple.0.atom_to_string().is_ok_and(|atom| atom == "bytes")
+            {
+                let binary: binary::Binary = tuple.1.decode().unwrap();
+                Value::Bytes(Bytes::new(binary.to_vec()))
+            } else {
+                Value::None
+            }
+        }
         rustler::TermType::Map => {
             let map: HashMap<Term, Term> = term.decode().unwrap();
             let mut dict = Dict::new();

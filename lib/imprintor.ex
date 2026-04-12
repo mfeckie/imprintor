@@ -80,6 +80,19 @@ defmodule Imprintor do
     end
   end
 
+  @doc """
+  Wraps raw binary data to be consumed as Typst `bytes`.
+
+  This is useful for APIs like `pdf.attach` that expect a bytes value.
+
+  ## Examples
+
+      data = %{
+        "factur_x_xml" => Imprintor.bytes("<xml>...</xml>")
+      }
+  """
+  def bytes(binary) when is_binary(binary), do: {:bytes, binary}
+
   def typst_to_pdf(_config), do: :erlang.nif_error(:nif_not_loaded)
   def typst_to_pdf_file(_config, _output_path), do: :erlang.nif_error(:nif_not_loaded)
 end

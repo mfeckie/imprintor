@@ -365,6 +365,39 @@ defmodule ImprintorTest do
     end
   end
 
+  test "compile_to_pdf supports tagged bytes tuple for pdf.attach" do
+    template = """
+    #set document(date: datetime.today())
+
+    #pdf.attach(
+      "factur-x.xml",
+      sys.inputs.elixir_data.factur_x_xml,
+      relationship: "alternative",
+      mime-type: "application/xml",
+      description: "Factur-X XML",
+    )
+
+    = Invoice Attachment Test
+    """
+
+    data = %{
+      "factur_x_xml" => Imprintor.bytes("<factur-x><id>123</id></factur-x>")
+    }
+
+    config = Imprintor.Config.new(template, data, pdf_standard: "a-3a")
+
+    case Imprintor.compile_to_pdf(config) do
+      {:ok, pdf_binary} ->
+        assert is_binary(pdf_binary)
+        assert byte_size(pdf_binary) > 0
+        assert String.starts_with?(pdf_binary, "%PDF")
+
+      {:error, reason} ->
+        flunk(
+          "Expected successful PDF generation with tagged bytes, got error: #{inspect(reason)}"
+        )
+    end
+  end
 
   test "compile_to_pdf with large file - 500 items with images and QR codes" do
     template = """
