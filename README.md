@@ -9,6 +9,8 @@ A fast and efficient Elixir library for generating PDF documents from [Typst](ht
 - 💾 **In-memory PDF generation** - returns PDF binary data
 - 📝 **Typst syntax** support for beautiful document formatting
 - 🧩 **Rich data support** - pass complex nested data structures
+- 📚 **PDF standard selection** - enforce standards like `a-3a`, `ua-1`, and `1.7`
+- 📎 **Tagged bytes support** - pass binary data for Typst APIs like `pdf.attach`
 
 ## Installation
 
@@ -117,6 +119,48 @@ Imprintor uses Typst syntax for data access:
   - #order.product: \\$#order.total
 ]
 ```
+
+### PDF Standard Option
+
+```elixir
+template = """
+#set document(date: datetime.today())
+= Invoice
+"""
+
+config = Imprintor.Config.new(template, %{}, pdf_standard: "a-3a")
+{:ok, pdf_binary} = Imprintor.compile_to_pdf(config)
+```
+
+Supported values are:
+`1.4`, `1.5`, `1.6`, `1.7`, `2.0`, `a-1a`, `a-1b`, `a-2a`, `a-2b`, `a-2u`, `a-3a`, `a-3b`, `a-3u`, `a-4`, `a-4e`, `a-4f`, `ua-1`.
+
+### Tagged Bytes for `pdf.attach`
+
+```elixir
+template = """
+#set document(date: datetime.today())
+
+#pdf.attach(
+  "factur-x.xml",
+  sys.inputs.elixir_data.factur_x_xml,
+  relationship: "alternative",
+  mime-type: "application/xml",
+  description: "Factur-X XML",
+)
+
+= Invoice
+"""
+
+data = %{
+  "factur_x_xml" => Imprintor.bytes("<xml>...</xml>")
+}
+
+config = Imprintor.Config.new(template, data, pdf_standard: "a-3a")
+{:ok, pdf_binary} = Imprintor.compile_to_pdf(config)
+```
+
+`Imprintor.bytes/1` returns the tagged tuple `{:bytes, binary}`.
 
 ## License
 

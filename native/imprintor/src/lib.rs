@@ -13,7 +13,7 @@ use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
 use typst::{Library, LibraryExt};
 use typst_kit::fonts::{FontSlot, Fonts};
-use typst_pdf::PdfOptions;
+use typst_pdf::{PdfOptions, PdfStandard, PdfStandards};
 /// A File that will be stored in the HashMap.
 #[derive(Clone, Debug)]
 struct FileEntry {
@@ -65,6 +65,7 @@ pub struct ImprintorConfig<'a> {
     extra_fonts: Option<Vec<String>>,
     data: Option<Term<'a>>,
     root_directory: String,
+    pdf_standard: Option<String>,
 }
 
 impl ImprintorNifWorld {
@@ -209,6 +210,18 @@ fn typst_values_from_elxiir(term: Term) -> typst::foundations::Value {
             let typst_array: Array = list.into_iter().map(typst_values_from_elxiir).collect();
             Value::Array(typst_array)
         }
+        rustler::TermType::Tuple => {
+            let tuple: (Term, Term) = term.decode().unwrap();
+
+            if tuple.0.get_type() == rustler::TermType::Atom
+                && tuple.0.atom_to_string().is_ok_and(|atom| atom == "bytes")
+            {
+                let binary: binary::Binary = tuple.1.decode().unwrap();
+                Value::Bytes(Bytes::new(binary.to_vec()))
+            } else {
+                Value::None
+            }
+        }
         rustler::TermType::Map => {
             let map: HashMap<Term, Term> = term.decode().unwrap();
             let mut dict = Dict::new();
@@ -292,11 +305,12 @@ fn typst_to_pdf<'a>(
     env: rustler::Env<'a>,
     config: ImprintorConfig,
 ) -> Result<rustler::Binary<'a>, String> {
+    let pdf_options = build_pdf_options(config.pdf_standard.as_deref())?;
     let world = ImprintorNifWorld::new(config);
 
     match typst::compile(&world).output {
         Ok(document) => {
-            let pdf_bytes = typst_pdf::pdf(&document, &PdfOptions::default()).unwrap();
+            let pdf_bytes = typst_pdf::pdf(&document, &pdf_options).unwrap();
             let mut binary = rustler::OwnedBinary::new(pdf_bytes.len()).unwrap();
             binary.as_mut_slice().copy_from_slice(&pdf_bytes);
             Ok(binary.release(env))
@@ -314,11 +328,12 @@ fn typst_to_pdf<'a>(
 
 #[rustler::nif(schedule = "DirtyCpu")]
 fn typst_to_pdf_file<'a>(config: ImprintorConfig, output_path: String) -> Result<String, String> {
+    let pdf_options = build_pdf_options(config.pdf_standard.as_deref())?;
     let world = ImprintorNifWorld::new(config);
 
     match typst::compile(&world).output {
         Ok(document) => {
-            let pdf_bytes = typst_pdf::pdf(&document, &PdfOptions::default()).unwrap();
+            let pdf_bytes = typst_pdf::pdf(&document, &pdf_options).unwrap();
             match std::fs::write(&output_path, pdf_bytes) {
                 Ok(_) => Ok(output_path.into()),
                 Err(err) => Err(err.to_string().into()),
@@ -332,6 +347,53 @@ fn typst_to_pdf_file<'a>(config: ImprintorConfig, output_path: String) -> Result
                 .join(", ");
             Err(format!("Compilation failed: {}", error_msg))
         }
+    }
+}
+
+fn build_pdf_options(pdf_standard: Option<&str>) -> Result<PdfOptions<'static>, String> {
+    let mut options = PdfOptions::default();
+
+    if let Some(standard_value) = pdf_standard {
+        let standard = parse_pdf_standard(standard_value).ok_or_else(|| {
+            format!(
+                "Unsupported PDF standard '{}' . Supported values: {}",
+                standard_value,
+                SUPPORTED_PDF_STANDARDS.join(", ")
+            )
+        })?;
+
+        options.standards =
+            PdfStandards::new(&[standard]).map_err(|err| format!("Invalid PDF standard: {err}"))?;
+    }
+
+    Ok(options)
+}
+
+const SUPPORTED_PDF_STANDARDS: [&str; 17] = [
+    "1.4", "1.5", "1.6", "1.7", "2.0", "a-1a", "a-1b", "a-2a", "a-2b", "a-2u", "a-3a", "a-3b",
+    "a-3u", "a-4", "a-4e", "a-4f", "ua-1",
+];
+
+fn parse_pdf_standard(input: &str) -> Option<PdfStandard> {
+    match input.trim().to_ascii_lowercase().as_str() {
+        "1.4" => Some(PdfStandard::V_1_4),
+        "1.5" => Some(PdfStandard::V_1_5),
+        "1.6" => Some(PdfStandard::V_1_6),
+        "1.7" => Some(PdfStandard::V_1_7),
+        "2.0" => Some(PdfStandard::V_2_0),
+        "a-1a" => Some(PdfStandard::A_1a),
+        "a-1b" => Some(PdfStandard::A_1b),
+        "a-2a" => Some(PdfStandard::A_2a),
+        "a-2b" => Some(PdfStandard::A_2b),
+        "a-2u" => Some(PdfStandard::A_2u),
+        "a-3a" => Some(PdfStandard::A_3a),
+        "a-3b" => Some(PdfStandard::A_3b),
+        "a-3u" => Some(PdfStandard::A_3u),
+        "a-4" => Some(PdfStandard::A_4),
+        "a-4e" => Some(PdfStandard::A_4e),
+        "a-4f" => Some(PdfStandard::A_4f),
+        "ua-1" => Some(PdfStandard::Ua_1),
+        _ => None,
     }
 }
 
