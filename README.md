@@ -20,10 +20,57 @@ Add `imprintor` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:imprintor, "~> 0.1.0"}
+    {:imprintor, "~> 0.7"}
   ]
 end
 ```
+
+Imprintor ships precompiled NIFs for these targets, so you don't need a Rust toolchain:
+
+- macOS: `aarch64-apple-darwin` (Apple Silicon), `x86_64-apple-darwin` (Intel)
+- Linux: `x86_64-unknown-linux-gnu`, `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-gnu`, `aarch64-unknown-linux-musl`, `arm-unknown-linux-gnueabihf`
+- Windows: `x86_64-pc-windows-msvc`
+
+### Building from source
+
+On any other target, compiling Imprintor fails with:
+
+```
+** (RuntimeError) precompiled NIF is not available for this target: "<your target>".
+```
+
+You can also build from source on a supported target, for example to use your own Rust toolchain.
+
+1. **Install Rust 1.92 or newer** ([rustup](https://rustup.rs)). Typst 0.15 needs at least 1.92; an older `rustc` fails part-way through the build with `rustc 1.91.1 is not supported by the following packages`. Check with `rustc --version`, and update with `rustup update stable`.
+
+2. **Add Rustler to your own dependencies.** It is optional in Imprintor, so it isn't fetched otherwise:
+
+   ```elixir
+   def deps do
+     [
+       {:imprintor, "~> 0.7"},
+       {:rustler, ">= 0.0.0", optional: true}
+     ]
+   end
+   ```
+
+   Without it, forcing the build fails with `Rustler dependency is needed to force the build`.
+
+3. **Force the build**, with either the environment variable or config:
+
+   ```console
+   $ mix deps.get
+   $ FORCE_COMPILE=1 mix compile
+   ```
+
+   ```elixir
+   # config/config.exs
+   config :rustler_precompiled, :force_build, imprintor: true
+   ```
+
+   Use `mix compile` (or `mix deps.compile`), not `mix deps.compile imprintor` on its own. The plain commands compile Rustler before Imprintor. Compiling only Imprintor before Rustler has been compiled fails with the same `Rustler dependency is needed` error.
+
+   The setting is read when Imprintor itself compiles. To switch an Imprintor that is already compiled over to a source build, run `mix deps.compile imprintor --force` with the setting on. The config setting applies to every later build automatically. The environment variable doesn't, so set it on any build that compiles Imprintor again (a fresh `_build`, CI, a release image).
 
 ## Usage
 
@@ -32,9 +79,9 @@ end
 ```elixir
 # Define a Typst template with data access
 template = """
-= Hello #elixir_data.name!
+= Hello #sys.inputs.elixir_data.name!
 
-*Date:* #elixir_data.date
+*Date:* #sys.inputs.elixir_data.date
 
 This is a sample document generated using Imprintor.
 
@@ -142,7 +189,7 @@ Supported values are:
 returned as a list in page order:
 
 ```elixir
-template = "= Hello #elixir_data.name!"
+template = "= Hello #sys.inputs.elixir_data.name!"
 config = Imprintor.Config.new(template, %{"name" => "World"})
 
 {:ok, [png_binary]} = Imprintor.compile_to_png(config)
