@@ -1,0 +1,36 @@
+#!/bin/bash
+
+FILES_PATTERN='\.(js|coffee|haml|erb|rb|exs|ex|json|yml)(\..+)?$'
+
+FORBIDDEN=(
+  " debugger"
+  "binding\.pry"
+  "byebug"
+  ">>>>>>"
+  "<<<<<<"
+  "save_and_open_page"
+  "require\ 'pry'"
+  "require\ \"pry\""
+  "IEx\.pry"
+  "require\ IEx"
+)
+
+set -euo pipefail
+
+FORBIDDEN_FOUND=
+
+if [[ -z ${THIS_IS_FINE:-} ]]; then
+  for i in "${FORBIDDEN[@]}"
+  do
+    git diff --cached --diff-filter=ACMR --name-only | grep -E $FILES_PATTERN | \
+        GREP_COLORS='4;5;37;41' xargs grep --color --with-filename -n "$i" \
+      && echo -e 'Debugger code found:' $i '- please remove before committing' \
+      && echo -e 'if you are sure the code is okay, e.g. a comment, then use this:' \
+      && echo -e "\n  THIS_IS_FINE=true git commit ...\n" \
+      && FORBIDDEN_FOUND=true
+  done
+else
+  echo "Skipping pre-commit check for debugging code."
+fi
+# returns 0 (true) if $FORBIDDEN_FOUND is empty
+[[ -z $FORBIDDEN_FOUND ]]

@@ -1,5 +1,12 @@
 ## Changelog
 
+## Unreleased
+
+- **Changed:** precompiled NIFs are no longer built for NIF version 2.15 (OTP 22/23). This has no effect on users because imprintor requires Elixir 1.17+ (OTP 25+), which uses NIF 2.16+.
+- **Fixed:** `rustler_precompiled` is updated to 0.10.1, which fixes NIF downloads from GitHub releases that failed with `{:header_too_long, {:max, 10240}}`. Rust dependency lockfile updates are included.
+- **Added:** precompiled NIFs are now built for NIF version 2.18 (Erlang/OTP 29).
+- **Changed:** the `x86_64-apple-darwin` NIF is now cross-compiled on an Apple Silicon (`macos-15`) runner instead of `macos-15-intel`, because GitHub is retiring the Intel macOS runner images.
+
 ## 0.8.0
 
 - **Added:** precompiled NIFs for Intel Macs (`x86_64-apple-darwin`, built on the `macos-15-intel` runner). `arm-unknown-linux-gnueabihf` is now in `targets:`; it was already built and published, but could never be downloaded.
