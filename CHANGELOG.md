@@ -1,6 +1,6 @@
 ## Changelog
 
-## Unreleased
+## 0.8.0
 
 - **Added:** precompiled NIFs for Intel Macs (`x86_64-apple-darwin`, built on the `macos-15-intel` runner). `arm-unknown-linux-gnueabihf` is now in `targets:`; it was already built and published, but could never be downloaded.
 - **Fixed:** `config :rustler_precompiled, :force_build, imprintor: true` is now honoured. Imprintor always passed `force_build:` to RustlerPrecompiled, which overrode that config, so only `FORCE_COMPILE=1` could force a source build.
