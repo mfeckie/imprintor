@@ -21,9 +21,9 @@ defmodule Imprintor do
       System.get_env("FORCE_COMPILE") in ["true", "1"] or
         Application.compile_env(:rustler_precompiled, [:force_build, :imprintor], false),
     nif_versions: [
-      "2.15",
       "2.16",
-      "2.17"
+      "2.17",
+      "2.18"
     ],
     targets: [
       "aarch64-apple-darwin",

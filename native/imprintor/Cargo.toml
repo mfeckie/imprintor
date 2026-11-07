@@ -20,14 +20,14 @@
   typst-pdf = "0.15.1"
   typst-layout = "0.15.1"
   typst-render = "0.15.1"
-  time = "0.3.44"
-  serde_json = "1.0.145"
-  ureq = "3.1.4"
-  tar = "0.4.44"
+  time = "0.3.55"
+  serde_json = "1.0.154"
+  ureq = "3.5.1"
+  tar = "0.4.46"
   zune-inflate = "0.2.54"
 
 [features]
-  default = ["nif_version_2_15"]
-  nif_version_2_15 = ["rustler/nif_version_2_15"]
+  default = ["nif_version_2_16"]
   nif_version_2_16 = ["rustler/nif_version_2_16"]
   nif_version_2_17 = ["rustler/nif_version_2_17"]
+  nif_version_2_18 = ["rustler/nif_version_2_18"]
