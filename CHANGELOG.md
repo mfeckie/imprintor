@@ -1,5 +1,11 @@
 ## Changelog
 
+## Unreleased
+
+- **Added:** precompiled NIFs for Intel Macs (`x86_64-apple-darwin`, built on the `macos-15-intel` runner). `arm-unknown-linux-gnueabihf` is now in `targets:`; it was already built and published, but could never be downloaded.
+- **Fixed:** `config :rustler_precompiled, :force_build, imprintor: true` is now honoured. Imprintor always passed `force_build:` to RustlerPrecompiled, which overrode that config, so only `FORCE_COMPILE=1` could force a source build.
+- **Docs:** the README lists the precompiled targets and explains how to build from source: Rust 1.92+, adding `:rustler`, and using `mix compile` rather than `mix deps.compile imprintor`. Its examples now use `sys.inputs.elixir_data` (a bare `elixir_data` fails with `unknown variable: elixir_data`).
+
 ## 0.7.0
 
 - **Added:** `Imprintor.compile_to_png/1` and `Imprintor.compile_to_png_file/2` — render a Typst template to PNG image(s) instead of a PDF ([#16](https://github.com/mfeckie/imprintor/issues/16)). Multi-page documents produce one binary/file per page; `Imprintor.Config` gains an optional `:ppi` field (defaults to `144.0`, matching `typst-cli`).

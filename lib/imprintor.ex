@@ -14,7 +14,12 @@ defmodule Imprintor do
     crate: :imprintor,
     version: version,
     base_url: "https://github.com/mfeckie/imprintor/releases/download/#{version}",
-    force_build: System.get_env("FORCE_COMPILE") in ["true", "1"],
+    # Passing `force_build:` overrides RustlerPrecompiled's own
+    # `config :rustler_precompiled, :force_build, imprintor: true`, so honour
+    # that config here as well as the FORCE_COMPILE environment variable.
+    force_build:
+      System.get_env("FORCE_COMPILE") in ["true", "1"] or
+        Application.compile_env(:rustler_precompiled, [:force_build, :imprintor], false),
     nif_versions: [
       "2.15",
       "2.16",
@@ -22,10 +27,12 @@ defmodule Imprintor do
     ],
     targets: [
       "aarch64-apple-darwin",
+      "x86_64-apple-darwin",
       "x86_64-unknown-linux-gnu",
       "x86_64-unknown-linux-musl",
       "aarch64-unknown-linux-gnu",
       "aarch64-unknown-linux-musl",
+      "arm-unknown-linux-gnueabihf",
       "x86_64-pc-windows-msvc"
     ]
 

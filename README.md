@@ -20,10 +20,42 @@ Add `imprintor` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:imprintor, "~> 0.1.0"}
+    {:imprintor, "~> 0.7"}
   ]
 end
 ```
+
+Precompiled NIFs are available for:
+
+- macOS: `aarch64-apple-darwin`, `x86_64-apple-darwin`
+- Linux: `x86_64-unknown-linux-gnu`, `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-gnu`, `aarch64-unknown-linux-musl`, `arm-unknown-linux-gnueabihf`
+- Windows: `x86_64-pc-windows-msvc`
+
+### Building from source
+
+For other targets, build from source:
+
+1. Install Rust 1.92 or newer.
+2. Add Rustler to your dependencies:
+
+   ```elixir
+   {:rustler, ">= 0.0.0", optional: true}
+   ```
+
+3. Enable the source build in `config/config.exs`:
+
+   ```elixir
+   config :rustler_precompiled, :force_build, imprintor: true
+   ```
+
+   Or set `FORCE_COMPILE=1` when compiling.
+
+4. Compile:
+
+   ```console
+   $ mix deps.get
+   $ mix compile
+   ```
 
 ## Usage
 
@@ -32,9 +64,9 @@ end
 ```elixir
 # Define a Typst template with data access
 template = """
-= Hello #elixir_data.name!
+= Hello #sys.inputs.elixir_data.name!
 
-*Date:* #elixir_data.date
+*Date:* #sys.inputs.elixir_data.date
 
 This is a sample document generated using Imprintor.
 
@@ -142,7 +174,7 @@ Supported values are:
 returned as a list in page order:
 
 ```elixir
-template = "= Hello #elixir_data.name!"
+template = "= Hello #sys.inputs.elixir_data.name!"
 config = Imprintor.Config.new(template, %{"name" => "World"})
 
 {:ok, [png_binary]} = Imprintor.compile_to_png(config)
