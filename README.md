@@ -25,52 +25,37 @@ def deps do
 end
 ```
 
-Imprintor ships precompiled NIFs for these targets, so you don't need a Rust toolchain:
+Precompiled NIFs are available for:
 
-- macOS: `aarch64-apple-darwin` (Apple Silicon), `x86_64-apple-darwin` (Intel)
+- macOS: `aarch64-apple-darwin`, `x86_64-apple-darwin`
 - Linux: `x86_64-unknown-linux-gnu`, `x86_64-unknown-linux-musl`, `aarch64-unknown-linux-gnu`, `aarch64-unknown-linux-musl`, `arm-unknown-linux-gnueabihf`
 - Windows: `x86_64-pc-windows-msvc`
 
 ### Building from source
 
-On any other target, compiling Imprintor fails with:
+For other targets, build from source:
 
-```
-** (RuntimeError) precompiled NIF is not available for this target: "<your target>".
-```
-
-You can also build from source on a supported target, for example to use your own Rust toolchain.
-
-1. **Install Rust 1.92 or newer** ([rustup](https://rustup.rs)). Typst 0.15 needs at least 1.92; an older `rustc` fails part-way through the build with `rustc 1.91.1 is not supported by the following packages`. Check with `rustc --version`, and update with `rustup update stable`.
-
-2. **Add Rustler to your own dependencies.** It is optional in Imprintor, so it isn't fetched otherwise:
+1. Install Rust 1.92 or newer.
+2. Add Rustler to your dependencies:
 
    ```elixir
-   def deps do
-     [
-       {:imprintor, "~> 0.7"},
-       {:rustler, ">= 0.0.0", optional: true}
-     ]
-   end
+   {:rustler, ">= 0.0.0", optional: true}
    ```
 
-   Without it, forcing the build fails with `Rustler dependency is needed to force the build`.
-
-3. **Force the build**, with either the environment variable or config:
-
-   ```console
-   $ mix deps.get
-   $ FORCE_COMPILE=1 mix compile
-   ```
+3. Enable the source build in `config/config.exs`:
 
    ```elixir
-   # config/config.exs
    config :rustler_precompiled, :force_build, imprintor: true
    ```
 
-   Use `mix compile` (or `mix deps.compile`), not `mix deps.compile imprintor` on its own. The plain commands compile Rustler before Imprintor. Compiling only Imprintor before Rustler has been compiled fails with the same `Rustler dependency is needed` error.
+   Or set `FORCE_COMPILE=1` when compiling.
 
-   The setting is read when Imprintor itself compiles. To switch an Imprintor that is already compiled over to a source build, run `mix deps.compile imprintor --force` with the setting on. The config setting applies to every later build automatically. The environment variable doesn't, so set it on any build that compiles Imprintor again (a fresh `_build`, CI, a release image).
+4. Compile:
+
+   ```console
+   $ mix deps.get
+   $ mix compile
+   ```
 
 ## Usage
 
