@@ -308,10 +308,11 @@ impl typst::World for ImprintorNifWorld {
 /// Clears Typst's global memoization cache when dropped.
 ///
 /// Typst memoizes compilation and export work in a process-wide cache
-/// (`comemo`) that only shrinks when the host calls `comemo::evict`. Each NIF
-/// call builds a fresh world, so entries from one call are never reused by the
-/// next, and without eviction they accumulate for the life of the BEAM (native
-/// memory that the VM can't see or reclaim). Declaring this guard first in each
+/// (`comemo`) that only shrinks when the host calls `comemo::evict`. Without
+/// eviction, entries accumulate for the life of the BEAM (native memory that
+/// the VM can't see or reclaim). Keeping them between calls made no measurable
+/// difference to compile time, so the cache is cleared after every call.
+/// Declaring this guard first in each
 /// NIF makes it drop last, after the world and document, and also on early
 /// returns and panics.
 struct EvictCacheOnDrop;

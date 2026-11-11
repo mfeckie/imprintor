@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- **Fixed:** native memory no longer grows with every compile. Typst keeps a process-wide memoization cache that is only freed when the host evicts it, and Imprintor never did, so every `compile_to_pdf`/`compile_to_png` call (and the `_file` variants) left its cache entries behind for the life of the BEAM. This memory is outside the VM, so it doesn't show up in `:erlang.memory/0`, only in the OS process size. Each call now clears the cache when it finishes. Calls never shared cache entries, because each one builds a fresh world, so this doesn't make compiles slower.
+- **Fixed:** native memory no longer grows with every compile. Typst keeps a process-wide memoization cache that is only freed when the host evicts it, and Imprintor never did, so every `compile_to_pdf`/`compile_to_png` call (and the `_file` variants) left its cache entries behind for the life of the BEAM. This memory is outside the VM, so it doesn't show up in `:erlang.memory/0`, only in the OS process size. Each call now clears the cache when it finishes. Keeping entries between calls made no measurable difference to compile time, so this doesn't make compiles slower.
 
 ## 0.9.0
 
