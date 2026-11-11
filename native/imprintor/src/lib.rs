@@ -2,6 +2,7 @@ use rustler::types::binary;
 use rustler::{NifStruct, Term};
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use typst::diag::{FileError, FileResult, PackageError, PackageResult};
 use typst::ecow::eco_format;
@@ -305,21 +306,60 @@ impl typst::World for ImprintorNifWorld {
     }
 }
 
-/// Clears Typst's global memoization cache when dropped.
+/// Number of compiles currently running, across all dirty schedulers.
+static ACTIVE_COMPILES: AtomicUsize = AtomicUsize::new(0);
+
+/// Marks one compile as in flight, and clears Typst's global memoization
+/// cache when the last in-flight compile finishes.
 ///
 /// Typst memoizes compilation and export work in a process-wide cache
 /// (`comemo`) that only shrinks when the host calls `comemo::evict`. Without
 /// eviction, entries accumulate for the life of the BEAM (native memory that
-/// the VM can't see or reclaim). Keeping them between calls made no measurable
-/// difference to compile time, so the cache is cleared after every call.
-/// Declaring this guard first in each NIF makes it drop last, after the world
-/// and document, and also on early returns and panics.
-struct EvictCacheOnDrop;
+/// the VM can't see or reclaim). The cache is shared by every compile in the
+/// process, and Typst relies on it between its own layout passes, so evicting
+/// while another compile is still running would force that compile to redo
+/// its work. Evicting only when the count drops to zero avoids that.
+///
+/// A compile that starts in the instant between the count reaching zero and
+/// the eviction loses only the little it has cached so far, so this needs no
+/// lock.
+struct CompileGuard {
+    active: &'static AtomicUsize,
+}
 
-impl Drop for EvictCacheOnDrop {
-    fn drop(&mut self) {
-        typst::comemo::evict(0);
+impl CompileGuard {
+    fn enter(active: &'static AtomicUsize) -> Self {
+        active.fetch_add(1, Ordering::AcqRel);
+        Self { active }
     }
+
+    /// Returns whether this was the last in-flight compile.
+    fn leave(&self) -> bool {
+        self.active.fetch_sub(1, Ordering::AcqRel) == 1
+    }
+}
+
+impl Drop for CompileGuard {
+    fn drop(&mut self) {
+        if self.leave() {
+            typst::comemo::evict(0);
+        }
+    }
+}
+
+/// Builds a world from `config`, compiles it, and passes the document to
+/// `export`. Every NIF that runs Typst must go through here, so that the
+/// compile is counted and the cache is evicted afterwards.
+fn compile_with<T>(
+    config: ImprintorConfig,
+    export: impl FnOnce(&PagedDocument) -> Result<T, String>,
+) -> Result<T, String> {
+    // Declared first so it drops last, after the world and document, and also
+    // on early returns and panics.
+    let _guard = CompileGuard::enter(&ACTIVE_COMPILES);
+    let world = ImprintorNifWorld::new(config);
+    let document = compile_document(&world)?;
+    export(&document)
 }
 
 /// Compiles the world's source into a paged document, formatting any
@@ -343,12 +383,11 @@ fn typst_to_pdf<'a>(
     env: rustler::Env<'a>,
     config: ImprintorConfig,
 ) -> Result<rustler::Binary<'a>, String> {
-    let _evict_cache = EvictCacheOnDrop;
     let pdf_options = build_pdf_options(config.pdf_standard.as_deref())?;
-    let world = ImprintorNifWorld::new(config);
-    let document = compile_document(&world)?;
+    let pdf_bytes = compile_with(config, |document| {
+        Ok(typst_pdf::pdf(document, &pdf_options).unwrap())
+    })?;
 
-    let pdf_bytes = typst_pdf::pdf(&document, &pdf_options).unwrap();
     let mut binary = rustler::OwnedBinary::new(pdf_bytes.len()).unwrap();
     binary.as_mut_slice().copy_from_slice(&pdf_bytes);
     Ok(binary.release(env))
@@ -356,12 +395,11 @@ fn typst_to_pdf<'a>(
 
 #[rustler::nif(schedule = "DirtyCpu")]
 fn typst_to_pdf_file<'a>(config: ImprintorConfig, output_path: String) -> Result<String, String> {
-    let _evict_cache = EvictCacheOnDrop;
     let pdf_options = build_pdf_options(config.pdf_standard.as_deref())?;
-    let world = ImprintorNifWorld::new(config);
-    let document = compile_document(&world)?;
+    let pdf_bytes = compile_with(config, |document| {
+        Ok(typst_pdf::pdf(document, &pdf_options).unwrap())
+    })?;
 
-    let pdf_bytes = typst_pdf::pdf(&document, &pdf_options).unwrap();
     std::fs::write(&output_path, pdf_bytes).map_err(|err| err.to_string())?;
     Ok(output_path)
 }
@@ -371,11 +409,8 @@ fn typst_to_png<'a>(
     env: rustler::Env<'a>,
     config: ImprintorConfig,
 ) -> Result<Vec<rustler::Binary<'a>>, String> {
-    let _evict_cache = EvictCacheOnDrop;
     let ppi = config.ppi;
-    let world = ImprintorNifWorld::new(config);
-    let document = compile_document(&world)?;
-    let pages = render_document_to_pngs(&document, ppi)?;
+    let pages = compile_with(config, |document| render_document_to_pngs(document, ppi))?;
 
     pages
         .into_iter()
@@ -389,11 +424,8 @@ fn typst_to_png<'a>(
 
 #[rustler::nif(schedule = "DirtyCpu")]
 fn typst_to_png_file(config: ImprintorConfig, output_path: String) -> Result<Vec<String>, String> {
-    let _evict_cache = EvictCacheOnDrop;
     let ppi = config.ppi;
-    let world = ImprintorNifWorld::new(config);
-    let document = compile_document(&world)?;
-    let pages = render_document_to_pngs(&document, ppi)?;
+    let pages = compile_with(config, |document| render_document_to_pngs(document, ppi))?;
 
     let output_paths = page_output_paths(&output_path, pages.len());
 
@@ -535,6 +567,60 @@ mod tests {
         let err = result.expect_err("conflicting PDF version standards should fail to construct");
         let message = format!("Invalid PDF standard: {err:?}");
         assert!(!message.is_empty());
+    }
+
+    #[test]
+    fn compile_guard_reports_last_leaver_only() {
+        static ACTIVE: AtomicUsize = AtomicUsize::new(0);
+
+        let first = CompileGuard::enter(&ACTIVE);
+        let second = CompileGuard::enter(&ACTIVE);
+        assert_eq!(ACTIVE.load(Ordering::SeqCst), 2);
+
+        assert!(!first.leave());
+        assert!(second.leave());
+        assert_eq!(ACTIVE.load(Ordering::SeqCst), 0);
+        std::mem::forget(first);
+        std::mem::forget(second);
+    }
+
+    #[test]
+    fn compile_guard_drop_releases_count_on_panic() {
+        static ACTIVE: AtomicUsize = AtomicUsize::new(0);
+
+        let result = std::panic::catch_unwind(|| {
+            let _guard = CompileGuard::enter(&ACTIVE);
+            panic!("compile failed");
+        });
+
+        assert!(result.is_err());
+        assert_eq!(ACTIVE.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn concurrent_guards_return_count_to_zero() {
+        static ACTIVE: AtomicUsize = AtomicUsize::new(0);
+        static LAST_LEAVERS: AtomicUsize = AtomicUsize::new(0);
+
+        let threads: Vec<_> = (0..8)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    for _ in 0..1000 {
+                        let guard = CompileGuard::enter(&ACTIVE);
+                        if guard.leave() {
+                            LAST_LEAVERS.fetch_add(1, Ordering::SeqCst);
+                        }
+                        std::mem::forget(guard);
+                    }
+                })
+            })
+            .collect();
+        for thread in threads {
+            thread.join().unwrap();
+        }
+
+        assert_eq!(ACTIVE.load(Ordering::SeqCst), 0);
+        assert!(LAST_LEAVERS.load(Ordering::SeqCst) >= 1);
     }
 }
 
