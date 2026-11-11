@@ -312,9 +312,8 @@ impl typst::World for ImprintorNifWorld {
 /// eviction, entries accumulate for the life of the BEAM (native memory that
 /// the VM can't see or reclaim). Keeping them between calls made no measurable
 /// difference to compile time, so the cache is cleared after every call.
-/// Declaring this guard first in each
-/// NIF makes it drop last, after the world and document, and also on early
-/// returns and panics.
+/// Declaring this guard first in each NIF makes it drop last, after the world
+/// and document, and also on early returns and panics.
 struct EvictCacheOnDrop;
 
 impl Drop for EvictCacheOnDrop {
