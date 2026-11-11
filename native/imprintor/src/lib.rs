@@ -305,6 +305,23 @@ impl typst::World for ImprintorNifWorld {
     }
 }
 
+/// Clears Typst's global memoization cache when dropped.
+///
+/// Typst memoizes compilation and export work in a process-wide cache
+/// (`comemo`) that only shrinks when the host calls `comemo::evict`. Without
+/// eviction, entries accumulate for the life of the BEAM (native memory that
+/// the VM can't see or reclaim). Keeping them between calls made no measurable
+/// difference to compile time, so the cache is cleared after every call.
+/// Declaring this guard first in each NIF makes it drop last, after the world
+/// and document, and also on early returns and panics.
+struct EvictCacheOnDrop;
+
+impl Drop for EvictCacheOnDrop {
+    fn drop(&mut self) {
+        typst::comemo::evict(0);
+    }
+}
+
 /// Compiles the world's source into a paged document, formatting any
 /// diagnostics into a single error string on failure.
 fn compile_document(world: &ImprintorNifWorld) -> Result<PagedDocument, String> {
@@ -326,6 +343,7 @@ fn typst_to_pdf<'a>(
     env: rustler::Env<'a>,
     config: ImprintorConfig,
 ) -> Result<rustler::Binary<'a>, String> {
+    let _evict_cache = EvictCacheOnDrop;
     let pdf_options = build_pdf_options(config.pdf_standard.as_deref())?;
     let world = ImprintorNifWorld::new(config);
     let document = compile_document(&world)?;
@@ -338,6 +356,7 @@ fn typst_to_pdf<'a>(
 
 #[rustler::nif(schedule = "DirtyCpu")]
 fn typst_to_pdf_file<'a>(config: ImprintorConfig, output_path: String) -> Result<String, String> {
+    let _evict_cache = EvictCacheOnDrop;
     let pdf_options = build_pdf_options(config.pdf_standard.as_deref())?;
     let world = ImprintorNifWorld::new(config);
     let document = compile_document(&world)?;
@@ -352,6 +371,7 @@ fn typst_to_png<'a>(
     env: rustler::Env<'a>,
     config: ImprintorConfig,
 ) -> Result<Vec<rustler::Binary<'a>>, String> {
+    let _evict_cache = EvictCacheOnDrop;
     let ppi = config.ppi;
     let world = ImprintorNifWorld::new(config);
     let document = compile_document(&world)?;
@@ -369,6 +389,7 @@ fn typst_to_png<'a>(
 
 #[rustler::nif(schedule = "DirtyCpu")]
 fn typst_to_png_file(config: ImprintorConfig, output_path: String) -> Result<Vec<String>, String> {
+    let _evict_cache = EvictCacheOnDrop;
     let ppi = config.ppi;
     let world = ImprintorNifWorld::new(config);
     let document = compile_document(&world)?;
