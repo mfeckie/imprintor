@@ -51,10 +51,6 @@ jobs:
           - { target: x86_64-pc-windows-msvc, os: windows-2022 }
 
     steps:
-      - name: Install Package
-        uses: ConorMacBride/install-package@v1.1.0
-        with:
-          apt: gcc-aarch64-linux-gnu
       - name: Checkout source code
         uses: actions/checkout@v3
 
