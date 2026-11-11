@@ -1,8 +1,10 @@
 ## Changelog
 
-## Unreleased
+## 0.9.1
 
-- **Fixed:** native memory no longer grows without limit. Typst keeps a process-wide memoization cache that is only freed when the host evicts it, and Imprintor never did, so every `compile_to_pdf`/`compile_to_png` call (and the `_file` variants) left its cache entries behind for the life of the BEAM. This memory is outside the VM, so it doesn't show up in `:erlang.memory/0`, only in the OS process size. The cache is now cleared whenever the last running compile finishes. Concurrent compiles share the cache, so it is not cleared while any of them is still running, and they don't slow each other down. Clearing the cache keeps its allocated memory for reuse, so the OS process size stays near the peak reached by the largest compile (or set of concurrent compiles) instead of shrinking back.
+- **Fixed:** native memory no longer grows with every compile ([#21](https://github.com/mfeckie/imprintor/pull/21)). Typst stores memoized compile work in a cache that the whole OS process shares, and it is only freed when the host clears it. Imprintor never cleared it, so every `compile_to_pdf`/`compile_to_png` call (and the `_file` variants) left its entries behind for the life of the BEAM. This memory is native, so `:erlang.memory/0` stays flat while the OS process size keeps growing, until the process can be killed for running out of memory.
+- **Changed:** Imprintor now clears this cache when the last running compile finishes. While any compile is still running, the cache is left alone, so concurrent compiles don't throw away each other's cached work. Benchmarks of compiles run one after another showed no change in compile time.
+- **Note:** clearing the cache keeps its allocated memory for reuse. The OS process size settles near the peak reached by the largest compile (or the largest set of concurrent compiles) instead of dropping back, but it no longer grows with the number of compiles.
 
 ## 0.9.0
 
