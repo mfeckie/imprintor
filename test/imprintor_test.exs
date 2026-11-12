@@ -878,4 +878,27 @@ defmodule ImprintorTest do
       IO.inspect("After file memory usage: #{:erlang.memory(:total)} bytes")
     end
   end
+
+  test "concurrent compiles of multi-pass documents succeed" do
+    # Compiles finishing while others still run evict the cache mid-flight,
+    # which must not break the compiles that are still running.
+    results =
+      1..8
+      |> Task.async_stream(
+        fn n ->
+          Imprintor.Config.new(
+            "= Page #sys.inputs.elixir_data.n\n#outline()\n= A\n#lorem(400)\n= B\n#lorem(400)",
+            %{n: n}
+          )
+          |> Imprintor.compile_to_pdf()
+        end,
+        max_concurrency: 8,
+        timeout: 60_000
+      )
+      |> Enum.map(fn {:ok, result} -> result end)
+
+    for result <- results do
+      assert {:ok, "%PDF" <> _} = result
+    end
+  end
 end

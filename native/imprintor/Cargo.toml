@@ -26,6 +26,10 @@
   tar = "0.4.46"
   zune-inflate = "0.2.54"
 
+[dev-dependencies]
+  # Same version Typst uses, so tests can check eviction against real memoization.
+  comemo = "0.5.1"
+
 [features]
   default = ["nif_version_2_16"]
   nif_version_2_16 = ["rustler/nif_version_2_16"]

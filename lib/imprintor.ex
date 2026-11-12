@@ -4,6 +4,20 @@ defmodule Imprintor do
 
   It provides functions to compile Typst templates with data interpolation
   and generate PDF or PNG output using a native Rust implementation.
+
+  ## Memory
+
+  Typst caches compile work in native memory shared by every compile in the
+  OS process. Imprintor clears what it can after each compile:
+
+    * When no other compile is running, the whole cache is cleared.
+    * While other compiles are running, it keeps everything used since the
+      oldest of them started, so running compiles don't lose cached work, and
+      clears the rest. Memory is held for as long as the longest running
+      compile, not for as long as compiles keep overlapping.
+
+  Freed memory goes back to the allocator for reuse, so the OS process size
+  settles near its peak instead of dropping back.
   """
 
   mix_config = Mix.Project.config()

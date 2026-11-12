@@ -1,5 +1,9 @@
 ## Changelog
 
+## Unreleased
+
+- **Fixed:** native memory no longer grows while compiles keep overlapping. 0.9.1 cleared Typst's cache only when no compile was running, so with sustained concurrent compiles (e.g. a busy job queue) it was never cleared: in a test with 4 workers compiling back to back, memory grew by about 4 MB per compile, to 7 GB after 1,600 compiles. Each compile now records when it started, and when one finishes, the cache keeps everything used since the oldest running compile started and drops the rest. Running compiles keep their cached work, as in 0.9.1, and memory is held only as long as the longest running compile.
+
 ## 0.9.1
 
 - **Fixed:** native memory no longer grows with every compile ([#21](https://github.com/mfeckie/imprintor/pull/21)). Typst stores memoized compile work in a cache that the whole OS process shares, and it is only freed when the host clears it. Imprintor never cleared it, so every `compile_to_pdf`/`compile_to_png` call (and the `_file` variants) left its entries behind for the life of the BEAM. This memory is native, so `:erlang.memory/0` stays flat while the OS process size keeps growing, until the process can be killed for running out of memory.

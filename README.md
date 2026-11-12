@@ -225,6 +225,10 @@ config = Imprintor.Config.new(template, data, pdf_standard: "a-3a")
 
 `Imprintor.bytes/1` returns the tagged tuple `{:bytes, binary}`.
 
+### Memory
+
+Typst caches compile work in native memory, outside the BEAM, so `:erlang.memory/0` doesn't show it. Imprintor clears the cache after each compile, but keeps what compiles still running may need: everything used since the oldest running compile started. Memory is therefore held for as long as the longest compile runs, not for as long as compiles keep overlapping.
+
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.

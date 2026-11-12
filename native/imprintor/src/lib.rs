@@ -1,9 +1,8 @@
 use rustler::types::binary;
 use rustler::{NifStruct, Term};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard};
 use typst::diag::{FileError, FileResult, PackageError, PackageResult};
 use typst::ecow::eco_format;
 use typst::foundations::{Array, Dict, Str, Value};
@@ -306,57 +305,149 @@ impl typst::World for ImprintorNifWorld {
     }
 }
 
-/// Number of compiles currently running, across all dirty schedulers.
-static ACTIVE_COMPILES: AtomicUsize = AtomicUsize::new(0);
+/// What to pass to `comemo::evict` when a compile finishes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Eviction {
+    /// No other compile is running: clear the whole cache.
+    All,
+    /// Other compiles are running: drop only entries that are older than this
+    /// many evictions.
+    OlderThan(usize),
+}
 
-/// Marks one compile as in flight, and clears Typst's global memoization
-/// cache when the last in-flight compile finishes.
+impl Eviction {
+    fn max_age(&self) -> usize {
+        match self {
+            Eviction::All => 0,
+            Eviction::OlderThan(max_age) => *max_age,
+        }
+    }
+}
+
+/// Decides how much of Typst's global memoization cache to clear after each
+/// compile.
 ///
 /// Typst memoizes compilation and export work in a process-wide cache
 /// (`comemo`) that only shrinks when the host calls `comemo::evict`. Without
 /// eviction, entries accumulate for the life of the BEAM (native memory that
 /// the VM can't see or reclaim). The cache is shared by every compile in the
-/// process, and Typst relies on it between its own layout passes, so evicting
-/// while another compile is still running would force that compile to redo
-/// its work. Evicting only when the count drops to zero avoids that.
+/// process, and Typst relies on it between its own layout passes, so clearing
+/// entries a running compile still needs forces it to redo that work.
 ///
-/// A compile that starts in the instant between the count reaching zero and
-/// the eviction loses only the little it has cached so far, so this needs no
-/// lock.
+/// `comemo` ages entries in evictions: each `evict(max_age)` call adds one to
+/// every entry's age and drops those older than `max_age`, and using an entry
+/// resets its age to zero. Every compile records how many evictions had
+/// happened when it started. When a compile finishes, the cache is evicted
+/// with `max_age` set to the number of evictions since the oldest running
+/// compile started, so everything used by any running compile is kept, and
+/// only entries nothing has used since then are dropped. When no other compile
+/// is running, the whole cache is cleared.
+///
+/// Counting compiles in flight and clearing only at zero (as 0.9.1 did) never
+/// clears anything while compiles keep overlapping, so memory grew for as long
+/// as a burst lasted. This keeps memory bounded by the longest compile instead.
+struct CacheTracker {
+    state: Mutex<TrackerState>,
+}
+
+#[derive(Default)]
+struct TrackerState {
+    /// Evictions so far. A compile's start generation is this value when it
+    /// started.
+    evictions: u64,
+    /// Number of running compiles per start generation.
+    active: BTreeMap<u64, usize>,
+}
+
+impl CacheTracker {
+    const fn new() -> Self {
+        Self {
+            state: Mutex::new(TrackerState {
+                evictions: 0,
+                active: BTreeMap::new(),
+            }),
+        }
+    }
+
+    fn lock(&self) -> MutexGuard<'_, TrackerState> {
+        // The state is only counters, and every update completes before the
+        // lock is released, so a poisoned lock still holds consistent data.
+        self.state
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
+    /// Registers a starting compile and returns its start generation.
+    fn enter(&self) -> u64 {
+        let mut state = self.lock();
+        let start = state.evictions;
+        *state.active.entry(start).or_insert(0) += 1;
+        start
+    }
+
+    /// Unregisters a finished compile, then runs `evict` with the eviction to
+    /// do. `evict` runs while the lock is held, so evictions happen in the same
+    /// order they are counted, which the ages depend on.
+    fn leave(&self, start: u64, evict: impl FnOnce(&Eviction)) {
+        let mut state = self.lock();
+
+        if let Some(count) = state.active.get_mut(&start) {
+            *count -= 1;
+            if *count == 0 {
+                state.active.remove(&start);
+            }
+        }
+
+        state.evictions += 1;
+        let eviction = match state.active.keys().next() {
+            None => Eviction::All,
+            Some(&oldest_start) => {
+                // An entry last used while `evictions` was `used` has an age of
+                // `state.evictions - used` after this eviction. Every running
+                // compile started at `oldest_start` or later, so this keeps
+                // every entry used since then.
+                Eviction::OlderThan((state.evictions - oldest_start) as usize)
+            }
+        };
+
+        evict(&eviction);
+    }
+}
+
+static CACHE_TRACKER: CacheTracker = CacheTracker::new();
+
+/// Registers a compile with `CACHE_TRACKER` and evicts the cache when it is
+/// dropped, after the world and document, also on early returns and panics.
 struct CompileGuard {
-    active: &'static AtomicUsize,
+    start: u64,
 }
 
 impl CompileGuard {
-    fn enter(active: &'static AtomicUsize) -> Self {
-        active.fetch_add(1, Ordering::AcqRel);
-        Self { active }
-    }
-
-    /// Returns whether this was the last in-flight compile.
-    fn leave(&self) -> bool {
-        self.active.fetch_sub(1, Ordering::AcqRel) == 1
+    fn enter() -> Self {
+        Self {
+            start: CACHE_TRACKER.enter(),
+        }
     }
 }
 
 impl Drop for CompileGuard {
     fn drop(&mut self) {
-        if self.leave() {
-            typst::comemo::evict(0);
-        }
+        CACHE_TRACKER.leave(self.start, |eviction| {
+            typst::comemo::evict(eviction.max_age())
+        });
     }
 }
 
 /// Builds a world from `config`, compiles it, and passes the document to
 /// `export`. Every NIF that runs Typst must go through here, so that the
-/// compile is counted and the cache is evicted afterwards.
+/// compile is tracked and the cache is evicted afterwards.
 fn compile_with<T>(
     config: ImprintorConfig,
     export: impl FnOnce(&PagedDocument) -> Result<T, String>,
 ) -> Result<T, String> {
     // Declared first so it drops last, after the world and document, and also
     // on early returns and panics.
-    let _guard = CompileGuard::enter(&ACTIVE_COMPILES);
+    let _guard = CompileGuard::enter();
     let world = ImprintorNifWorld::new(config);
     let document = compile_document(&world)?;
     export(&document)
@@ -554,6 +645,7 @@ fn parse_pdf_standard(input: &str) -> Option<PdfStandard> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// `build_pdf_options` only ever calls `PdfStandards::new` with a single
     /// standard, so it can never hit the conflicting-standards error branch.
@@ -569,48 +661,96 @@ mod tests {
         assert!(!message.is_empty());
     }
 
-    #[test]
-    fn compile_guard_reports_last_leaver_only() {
-        static ACTIVE: AtomicUsize = AtomicUsize::new(0);
-
-        let first = CompileGuard::enter(&ACTIVE);
-        let second = CompileGuard::enter(&ACTIVE);
-        assert_eq!(ACTIVE.load(Ordering::SeqCst), 2);
-
-        assert!(!first.leave());
-        assert!(second.leave());
-        assert_eq!(ACTIVE.load(Ordering::SeqCst), 0);
-        std::mem::forget(first);
-        std::mem::forget(second);
+    /// Runs `leave` and returns the eviction it decided on.
+    fn leave(tracker: &CacheTracker, start: u64) -> Eviction {
+        let mut decided = None;
+        tracker.leave(start, |eviction| decided = Some(*eviction));
+        decided.expect("leave always decides on an eviction")
     }
 
     #[test]
-    fn compile_guard_drop_releases_count_on_panic() {
-        static ACTIVE: AtomicUsize = AtomicUsize::new(0);
+    fn last_compile_to_finish_clears_everything() {
+        let tracker = CacheTracker::new();
+        let start = tracker.enter();
+        assert_eq!(leave(&tracker, start), Eviction::All);
+    }
 
-        let result = std::panic::catch_unwind(|| {
-            let _guard = CompileGuard::enter(&ACTIVE);
+    #[test]
+    fn keeps_entries_used_since_the_oldest_running_compile_started() {
+        let tracker = CacheTracker::new();
+        let long = tracker.enter(); // starts at generation 0
+
+        // 50 short compiles finish while the long one runs. After the n-th,
+        // 50 evictions have passed since the long compile started, so
+        // anything it used is at most that old and must be kept.
+        for n in 1..=50 {
+            let short = tracker.enter();
+            assert_eq!(leave(&tracker, short), Eviction::OlderThan(n));
+        }
+
+        assert_eq!(leave(&tracker, long), Eviction::All);
+    }
+
+    #[test]
+    fn oldest_start_moves_forward_when_the_oldest_compile_finishes() {
+        let tracker = CacheTracker::new();
+        let first = tracker.enter(); // generation 0
+        let filler = tracker.enter();
+        assert_eq!(leave(&tracker, filler), Eviction::OlderThan(1));
+
+        let second = tracker.enter(); // generation 1
+                                      // `first` finishing leaves `second` as the oldest: 2 evictions have
+                                      // passed since generation 1 started... minus the one before it.
+        assert_eq!(leave(&tracker, first), Eviction::OlderThan(1));
+        assert_eq!(leave(&tracker, second), Eviction::All);
+    }
+
+    #[test]
+    fn compiles_started_in_the_same_generation_are_counted_separately() {
+        let tracker = CacheTracker::new();
+        let a = tracker.enter();
+        let b = tracker.enter();
+        assert_eq!(a, b);
+
+        assert_eq!(leave(&tracker, a), Eviction::OlderThan(1));
+        assert_eq!(leave(&tracker, b), Eviction::All);
+    }
+
+    #[test]
+    fn guard_unregisters_on_panic() {
+        let tracker = CacheTracker::new();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let start = tracker.enter();
+            // Mirrors CompileGuard::drop running during unwinding.
+            struct Leave<'a>(&'a CacheTracker, u64);
+            impl Drop for Leave<'_> {
+                fn drop(&mut self) {
+                    self.0.leave(self.1, |_| {});
+                }
+            }
+            let _leave = Leave(&tracker, start);
             panic!("compile failed");
-        });
+        }));
 
         assert!(result.is_err());
-        assert_eq!(ACTIVE.load(Ordering::SeqCst), 0);
+        assert!(tracker.lock().active.is_empty());
     }
 
     #[test]
-    fn concurrent_guards_return_count_to_zero() {
-        static ACTIVE: AtomicUsize = AtomicUsize::new(0);
-        static LAST_LEAVERS: AtomicUsize = AtomicUsize::new(0);
+    fn concurrent_compiles_leave_no_active_entries() {
+        static TRACKER: CacheTracker = CacheTracker::new();
+        static CLEARED_ALL: AtomicUsize = AtomicUsize::new(0);
 
         let threads: Vec<_> = (0..8)
             .map(|_| {
                 std::thread::spawn(|| {
                     for _ in 0..1000 {
-                        let guard = CompileGuard::enter(&ACTIVE);
-                        if guard.leave() {
-                            LAST_LEAVERS.fetch_add(1, Ordering::SeqCst);
-                        }
-                        std::mem::forget(guard);
+                        let start = TRACKER.enter();
+                        TRACKER.leave(start, |eviction| {
+                            if *eviction == Eviction::All {
+                                CLEARED_ALL.fetch_add(1, Ordering::SeqCst);
+                            }
+                        });
                     }
                 })
             })
@@ -619,8 +759,62 @@ mod tests {
             thread.join().unwrap();
         }
 
-        assert_eq!(ACTIVE.load(Ordering::SeqCst), 0);
-        assert!(LAST_LEAVERS.load(Ordering::SeqCst) >= 1);
+        let state = TRACKER.lock();
+        assert!(state.active.is_empty());
+        assert_eq!(state.evictions, 8000);
+        assert!(CLEARED_ALL.load(Ordering::SeqCst) >= 1);
+    }
+
+    static EXECUTIONS: AtomicUsize = AtomicUsize::new(0);
+
+    #[comemo::memoize]
+    fn memoized(key: u64) -> u64 {
+        EXECUTIONS.fetch_add(1, Ordering::SeqCst);
+        key
+    }
+
+    /// Calls `memoized(key)` and returns whether it was served from the cache.
+    fn cached(key: u64) -> bool {
+        let before = EXECUTIONS.load(Ordering::SeqCst);
+        memoized(key);
+        EXECUTIONS.load(Ordering::SeqCst) == before
+    }
+
+    /// Checks the tracker's ages against comemo's real eviction: whatever a
+    /// running compile has used survives any number of other compiles
+    /// finishing, and is dropped once nothing running has used it.
+    ///
+    /// This is the only test that calls `comemo::evict`, which is global, and
+    /// only it uses `memoized`, so it can't interfere with other tests.
+    #[test]
+    fn tracker_ages_match_comemo_eviction() {
+        let tracker = CacheTracker::new();
+        let evict = |eviction: &Eviction| comemo::evict(eviction.max_age());
+
+        let long = tracker.enter();
+        memoized(1); // used by the long compile when it started
+
+        for n in 0..30u64 {
+            let short = tracker.enter();
+            memoized(1000 + n); // each short compile's own work
+            tracker.leave(short, evict);
+        }
+        // The long compile's entry survived 30 evictions, and so did the
+        // short compiles' entries, since the long compile could still use them.
+        assert!(cached(1));
+        assert!(cached(1000));
+
+        // A compile that starts now and outlives the long one.
+        let late = tracker.enter();
+        memoized(2);
+        tracker.leave(long, evict);
+        // `late` is now the oldest. Entries it used are kept, and older ones
+        // that nothing has used since it started are dropped.
+        assert!(cached(2));
+        assert!(!cached(1001));
+
+        tracker.leave(late, evict);
+        assert!(!cached(2));
     }
 }
 
