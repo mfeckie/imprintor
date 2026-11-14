@@ -3,7 +3,7 @@ defmodule ImprintorTest do
   doctest Imprintor
 
   test "compile_to_pdf with simple template" do
-    template = "= Hello {{name}}\n\nThis is a test document."
+    template = "= Hello \#{sys.inputs.elixir_data.name}}\n\nThis is a test document."
     data = %{"name" => "World"}
 
     config = Imprintor.Config.new(template, data)
@@ -14,6 +14,9 @@ defmodule ImprintorTest do
         assert byte_size(pdf_binary) > 0
         # PDF files start with "%PDF"
         assert String.starts_with?(pdf_binary, "%PDF")
+        assert String.contains?(pdf_binary, "Hello World")
+        # Recent versions of Typst add tags by default
+        assert String.contains?(pdf_binary, "StructTreeRoot")
 
       {:error, reason} ->
         flunk("Expected successful PDF generation, got error: #{inspect(reason)}")
@@ -564,6 +567,39 @@ defmodule ImprintorTest do
     end
   end
 
+  test "compile_to_pdf without tags" do
+    template = "This is a test document."
+
+    config = Imprintor.Config.new(template, %{}, pdf_tagged: false)
+
+    case Imprintor.compile_to_pdf(config) do
+      {:ok, pdf_binary} ->
+        assert is_binary(pdf_binary)
+        assert byte_size(pdf_binary) > 0
+        # PDF files start with "%PDF"
+        assert String.starts_with?(pdf_binary, "%PDF")
+        # Tags must be absent
+        assert not String.contains?(pdf_binary, "StructTreeRoot")
+
+      {:error, reason} ->
+        flunk("Expected successful PDF generation, got error: #{inspect(reason)}")
+    end
+  end
+
+  test "compile_to_pdf fails when tags are disabled on a standard that requires them" do
+    template = "#set document(title: \"Test\", date: auto)\n\nThis is a test document."
+
+    config = Imprintor.Config.new(template, %{}, pdf_tagged: false, pdf_standard: "ua-1")
+
+    case Imprintor.compile_to_pdf(config) do
+      {:ok, _pdf_binary} ->
+        flunk("Expected PDF generation to fail")
+
+      {:error, reason} ->
+        assert reason == "cannot disable PDF tags because they are required by PDF/A-1a"
+    end
+  end
+
   test "compile_to_png with simple template" do
     template = "= Hello PNG\n\nThis is a test document rendered to PNG."
     config = Imprintor.Config.new(template)
@@ -695,6 +731,28 @@ defmodule ImprintorTest do
 
         error ->
           flunk("Expected error tuple due to invalid file path, got: #{inspect(error)}")
+      end
+    end
+
+    test "compile_to_pdf_file without tags" do
+      template = "= Direct File Test\n\nThis document tests direct file output."
+
+      data = %{"name" => "Direct File"}
+
+      config = Imprintor.Config.new(template, data, pdf_tagged: false)
+
+      case Imprintor.compile_to_pdf_file(config, "test_output.pdf") do
+        {:ok, "test_output.pdf"} ->
+          assert File.exists?("test_output.pdf")
+          {:ok, pdf_binary} = File.read("test_output.pdf")
+          assert is_binary(pdf_binary)
+          assert byte_size(pdf_binary) > 0
+          assert String.starts_with?(pdf_binary, "%PDF")
+          # Tags must be absent
+          assert not String.contains?(pdf_binary, "StructTreeRoot")
+
+        {:error, reason} ->
+          flunk("Expected successful PDF file generation, got error: #{inspect(reason)}")
       end
     end
 

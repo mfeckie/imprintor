@@ -67,6 +67,7 @@ pub struct ImprintorConfig<'a> {
     data: Option<Term<'a>>,
     root_directory: String,
     pdf_standard: Option<String>,
+    pdf_tagged: Option<bool>,
     ppi: Option<f64>,
 }
 
@@ -383,7 +384,7 @@ fn typst_to_pdf<'a>(
     env: rustler::Env<'a>,
     config: ImprintorConfig,
 ) -> Result<rustler::Binary<'a>, String> {
-    let pdf_options = build_pdf_options(config.pdf_standard.as_deref())?;
+    let pdf_options = build_pdf_options(config.pdf_standard.as_deref(), config.pdf_tagged)?;
     let pdf_bytes = compile_with(config, |document| {
         Ok(typst_pdf::pdf(document, &pdf_options).unwrap())
     })?;
@@ -395,7 +396,7 @@ fn typst_to_pdf<'a>(
 
 #[rustler::nif(schedule = "DirtyCpu")]
 fn typst_to_pdf_file<'a>(config: ImprintorConfig, output_path: String) -> Result<String, String> {
-    let pdf_options = build_pdf_options(config.pdf_standard.as_deref())?;
+    let pdf_options = build_pdf_options(config.pdf_standard.as_deref(), config.pdf_tagged)?;
     let pdf_bytes = compile_with(config, |document| {
         Ok(typst_pdf::pdf(document, &pdf_options).unwrap())
     })?;
@@ -504,8 +505,15 @@ fn page_output_paths(output_path: &str, page_count: usize) -> Vec<String> {
         .collect()
 }
 
-fn build_pdf_options(pdf_standard: Option<&str>) -> Result<PdfOptions, String> {
+fn build_pdf_options(
+    pdf_standard: Option<&str>,
+    pdf_tagged: Option<bool>,
+) -> Result<PdfOptions, String> {
     let mut options = PdfOptions::default();
+
+    if let Some(tagged) = pdf_tagged {
+        options.tagged = tagged;
+    }
 
     if let Some(standard_value) = pdf_standard {
         let standard = parse_pdf_standard(standard_value).ok_or_else(|| {
@@ -515,6 +523,24 @@ fn build_pdf_options(pdf_standard: Option<&str>) -> Result<PdfOptions, String> {
                 SUPPORTED_PDF_STANDARDS.join(", ")
             )
         })?;
+
+        if !options.tagged {
+            const ACCESSIBLE: &[(PdfStandard, &str)] = &[
+                (PdfStandard::A_1a, "PDF/A-1a"),
+                (PdfStandard::A_2a, "PDF/A-2a"),
+                (PdfStandard::A_3a, "PDF/A-3a"),
+                (PdfStandard::Ua_1, "PDF/UA-1"),
+            ];
+
+            for (standard, name) in ACCESSIBLE {
+                if standard == standard {
+                    return Err(format!(
+                        "cannot disable PDF tags because they are required by {}",
+                        name
+                    ));
+                }
+            }
+        }
 
         options.standards = PdfStandards::new(&[standard])
             .map_err(|err| format!("Invalid PDF standard: {err:?}"))?;
