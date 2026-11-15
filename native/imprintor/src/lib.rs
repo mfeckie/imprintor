@@ -1,7 +1,7 @@
 use rustler::types::binary;
 use rustler::{NifStruct, Term};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use typst::diag::{FileError, FileResult, PackageError, PackageResult};
@@ -67,6 +67,7 @@ pub struct ImprintorConfig<'a> {
     data: Option<Term<'a>>,
     root_directory: String,
     pdf_standard: Option<String>,
+    pdf_tagged: Option<bool>,
     ppi: Option<f64>,
 }
 
@@ -141,7 +142,7 @@ impl ImprintorNifWorld {
         let package_subdir = format!("{}/{}/{}", package.namespace, package.name, package.version);
         let path = self.cache_directory.join(package_subdir);
 
-        if path.exists() {
+        if is_unpacked_package(&path) {
             return Ok(path);
         }
 
@@ -176,14 +177,67 @@ impl ImprintorNifWorld {
             .decode_gzip()
             .map_err(|error| PackageError::MalformedArchive(Some(eco_format!("{error}"))))?;
 
-        let mut archive = tar::Archive::new(raw_archive.as_slice());
-
-        archive.unpack(&path).map_err(|error| {
-            _ = std::fs::remove_dir_all(&path);
-            PackageError::MalformedArchive(Some(eco_format!("{error}")))
-        })?;
+        install_package_archive(&raw_archive, &path)?;
 
         Ok(path)
+    }
+}
+
+/// Every Typst package ships a `typst.toml` manifest, so its presence marks a
+/// complete unpack. A bare directory is not enough: OS temp cleaners can empty
+/// the cache while leaving the directories behind.
+fn is_unpacked_package(path: &Path) -> bool {
+    path.join("typst.toml").is_file()
+}
+
+/// Unpacks into a staging directory and renames it into place, so a crash or
+/// a concurrent compile never sees a half-written package at `path`.
+fn install_package_archive(raw_archive: &[u8], path: &Path) -> PackageResult<()> {
+    static STAGING_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+    let malformed =
+        |error: std::io::Error| PackageError::MalformedArchive(Some(eco_format!("{error}")));
+
+    let parent = path.parent().ok_or_else(|| {
+        PackageError::Other(Some(eco_format!("invalid package path {}", path.display())))
+    })?;
+    std::fs::create_dir_all(parent)
+        .map_err(|error| PackageError::Other(Some(eco_format!("{error}"))))?;
+
+    let staging = parent.join(format!(
+        ".{}.{}-{}.partial",
+        path.file_name().unwrap_or_default().to_string_lossy(),
+        std::process::id(),
+        STAGING_COUNTER.fetch_add(1, Ordering::Relaxed)
+    ));
+
+    if let Err(error) = tar::Archive::new(raw_archive).unpack(&staging) {
+        _ = std::fs::remove_dir_all(&staging);
+        return Err(malformed(error));
+    }
+
+    if !is_unpacked_package(&staging) {
+        _ = std::fs::remove_dir_all(&staging);
+        return Err(PackageError::MalformedArchive(Some(eco_format!(
+            "archive does not contain typst.toml"
+        ))));
+    }
+
+    if path.exists() && !is_unpacked_package(path) {
+        _ = std::fs::remove_dir_all(path);
+    }
+
+    match std::fs::rename(&staging, path) {
+        Ok(()) => Ok(()),
+        // Another compile installed the package first; keep theirs.
+        Err(_) if is_unpacked_package(path) => {
+            _ = std::fs::remove_dir_all(&staging);
+            Ok(())
+        }
+        Err(error) => {
+            _ = std::fs::remove_dir_all(&staging);
+            Err(PackageError::Other(Some(eco_format!("{error}"))))
+        }
     }
 }
 
@@ -383,7 +437,7 @@ fn typst_to_pdf<'a>(
     env: rustler::Env<'a>,
     config: ImprintorConfig,
 ) -> Result<rustler::Binary<'a>, String> {
-    let pdf_options = build_pdf_options(config.pdf_standard.as_deref())?;
+    let pdf_options = build_pdf_options(config.pdf_standard.as_deref(), config.pdf_tagged)?;
     let pdf_bytes = compile_with(config, |document| {
         Ok(typst_pdf::pdf(document, &pdf_options).unwrap())
     })?;
@@ -395,7 +449,7 @@ fn typst_to_pdf<'a>(
 
 #[rustler::nif(schedule = "DirtyCpu")]
 fn typst_to_pdf_file<'a>(config: ImprintorConfig, output_path: String) -> Result<String, String> {
-    let pdf_options = build_pdf_options(config.pdf_standard.as_deref())?;
+    let pdf_options = build_pdf_options(config.pdf_standard.as_deref(), config.pdf_tagged)?;
     let pdf_bytes = compile_with(config, |document| {
         Ok(typst_pdf::pdf(document, &pdf_options).unwrap())
     })?;
@@ -504,8 +558,15 @@ fn page_output_paths(output_path: &str, page_count: usize) -> Vec<String> {
         .collect()
 }
 
-fn build_pdf_options(pdf_standard: Option<&str>) -> Result<PdfOptions, String> {
+fn build_pdf_options(
+    pdf_standard: Option<&str>,
+    pdf_tagged: Option<bool>,
+) -> Result<PdfOptions, String> {
     let mut options = PdfOptions::default();
+
+    if let Some(tagged) = pdf_tagged {
+        options.tagged = tagged;
+    }
 
     if let Some(standard_value) = pdf_standard {
         let standard = parse_pdf_standard(standard_value).ok_or_else(|| {
@@ -516,11 +577,29 @@ fn build_pdf_options(pdf_standard: Option<&str>) -> Result<PdfOptions, String> {
             )
         })?;
 
+        if !options.tagged {
+            if let Some(name) = tagging_required_by(&standard) {
+                return Err(format!(
+                    "cannot disable PDF tags because they are required by {name}"
+                ));
+            }
+        }
+
         options.standards = PdfStandards::new(&[standard])
             .map_err(|err| format!("Invalid PDF standard: {err:?}"))?;
     }
 
     Ok(options)
+}
+
+fn tagging_required_by(standard: &PdfStandard) -> Option<&'static str> {
+    match standard {
+        PdfStandard::A_1a => Some("PDF/A-1a"),
+        PdfStandard::A_2a => Some("PDF/A-2a"),
+        PdfStandard::A_3a => Some("PDF/A-3a"),
+        PdfStandard::Ua_1 => Some("PDF/UA-1"),
+        _ => None,
+    }
 }
 
 const SUPPORTED_PDF_STANDARDS: [&str; 17] = [
@@ -567,6 +646,90 @@ mod tests {
         let err = result.expect_err("conflicting PDF version standards should fail to construct");
         let message = format!("Invalid PDF standard: {err:?}");
         assert!(!message.is_empty());
+    }
+
+    fn tar_with(files: &[(&str, &str)]) -> Vec<u8> {
+        let mut builder = tar::Builder::new(Vec::new());
+        for (name, contents) in files {
+            let mut header = tar::Header::new_gnu();
+            header.set_size(contents.len() as u64);
+            header.set_mode(0o644);
+            header.set_cksum();
+            builder
+                .append_data(&mut header, name, contents.as_bytes())
+                .unwrap();
+        }
+        builder.into_inner().unwrap()
+    }
+
+    fn scratch_dir(name: &str) -> PathBuf {
+        let dir =
+            std::env::temp_dir().join(format!("imprintor-test-{name}-{}", std::process::id()));
+        _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn empty_package_dir_is_not_treated_as_cached() {
+        let root = scratch_dir("empty-cache");
+        let path = root.join("preview/pkg/0.1.0");
+        std::fs::create_dir_all(&path).unwrap();
+        assert!(!is_unpacked_package(&path));
+
+        let archive = tar_with(&[("typst.toml", "[package]"), ("lib.typ", "#let x = 1")]);
+        install_package_archive(&archive, &path).unwrap();
+
+        assert!(is_unpacked_package(&path));
+        assert!(path.join("lib.typ").is_file());
+        let leftovers: Vec<_> = std::fs::read_dir(path.parent().unwrap())
+            .unwrap()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".partial"))
+            .collect();
+        assert!(leftovers.is_empty(), "staging dir was not cleaned up");
+        _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn archive_without_manifest_is_rejected_and_leaves_no_cache_entry() {
+        let root = scratch_dir("no-manifest");
+        let path = root.join("preview/pkg/0.1.0");
+
+        let archive = tar_with(&[("lib.typ", "#let x = 1")]);
+        let result = install_package_archive(&archive, &path);
+
+        assert!(matches!(result, Err(PackageError::MalformedArchive(_))));
+        assert!(!path.exists());
+        _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn untagged_rejected_for_standards_that_require_tags() {
+        for (input, name) in [
+            ("a-1a", "PDF/A-1a"),
+            ("a-2a", "PDF/A-2a"),
+            ("a-3a", "PDF/A-3a"),
+            ("ua-1", "PDF/UA-1"),
+        ] {
+            let err = build_pdf_options(Some(input), Some(false))
+                .err()
+                .unwrap_or_else(|| panic!("{input} should reject untagged output"));
+            assert_eq!(
+                err,
+                format!("cannot disable PDF tags because they are required by {name}")
+            );
+        }
+    }
+
+    #[test]
+    fn untagged_allowed_for_standards_without_tag_requirement() {
+        for input in ["1.7", "2.0", "a-1b", "a-2b", "a-2u", "a-3b", "a-3u", "a-4"] {
+            let options = build_pdf_options(Some(input), Some(false))
+                .unwrap_or_else(|err| panic!("{input} should allow untagged output: {err}"));
+            assert!(!options.tagged);
+        }
+        assert!(!build_pdf_options(None, Some(false)).unwrap().tagged);
     }
 
     #[test]

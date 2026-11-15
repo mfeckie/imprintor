@@ -13,6 +13,7 @@ defmodule Imprintor.Config do
   * `:root_directory` - The root directory for resolving relative paths (defaults to ".")
   * `:data` - A map containing template data and variables for document generation
   * `:pdf_standard` - Optional PDF standard string (e.g. `"a-3a"`, `"ua-1"`, `"1.7"`)
+  * `:pdf_tagged` - Optional boolean flag to include PDF tags (defaults to true)
   * `:ppi` - Optional pixels-per-inch used for PNG rendering (defaults to `144.0`)
 
   ## Examples
@@ -33,7 +34,15 @@ defmodule Imprintor.Config do
       ])
   """
 
-  defstruct [:source_document, :extra_fonts, :root_directory, :data, :pdf_standard, :ppi]
+  defstruct [
+    :source_document,
+    :extra_fonts,
+    :root_directory,
+    :data,
+    :pdf_standard,
+    :pdf_tagged,
+    :ppi
+  ]
 
   @doc """
   Creates a new configuration struct.
@@ -49,6 +58,7 @@ defmodule Imprintor.Config do
   * `:extra_fonts` - List of additional font files to include (defaults to `[]`)
   * `:root_directory` - Root directory for resolving relative paths (defaults to `"."`)
   * `:pdf_standard` - PDF standard to enforce (defaults to `nil` / Typst default)
+  * `:pdf_tagged` - Include PDF tags (defaults to true). Cannot be `false` with PDF/A-1a, A-2a, A-3a or UA-1, which require tags.
   * `:ppi` - Pixels-per-inch for PNG rendering (defaults to `nil`, which uses `144.0`)
 
   ## Returns
@@ -85,6 +95,8 @@ defmodule Imprintor.Config do
 
     pdf_standard = Keyword.get(opts, :pdf_standard)
 
+    pdf_tagged = Keyword.get(opts, :pdf_tagged)
+
     ppi = Keyword.get(opts, :ppi)
 
     %__MODULE__{
@@ -93,6 +105,7 @@ defmodule Imprintor.Config do
       root_directory: root_directory,
       data: data,
       pdf_standard: pdf_standard,
+      pdf_tagged: pdf_tagged,
       ppi: ppi
     }
   end
