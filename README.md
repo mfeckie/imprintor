@@ -11,6 +11,7 @@ A fast and efficient Elixir library for generating PDF and PNG documents from [T
 - 📝 **Typst syntax** support for beautiful document formatting
 - 🧩 **Rich data support** - pass complex nested data structures
 - 📚 **PDF standard selection** - enforce standards like `a-3a`, `ua-1`, and `1.7`
+- 🏷️ **Optional PDF tags** - tagged for accessibility by default, or turn tags off
 - 📎 **Tagged bytes support** - pass binary data for Typst APIs like `pdf.attach`
 
 ## Installation
@@ -20,7 +21,7 @@ Add `imprintor` to your list of dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:imprintor, "~> 0.7"}
+    {:imprintor, "~> 0.10"}
   ]
 end
 ```
@@ -167,6 +168,26 @@ config = Imprintor.Config.new(template, %{}, pdf_standard: "a-3a")
 
 Supported values are:
 `1.4`, `1.5`, `1.6`, `1.7`, `2.0`, `a-1a`, `a-1b`, `a-2a`, `a-2b`, `a-2u`, `a-3a`, `a-3b`, `a-3u`, `a-4`, `a-4e`, `a-4f`, `ua-1`.
+
+### PDF Tags Option
+
+Typst tags PDFs for accessibility by default. Pass `pdf_tagged: false` to
+leave the tags out:
+
+```elixir
+config = Imprintor.Config.new(template, %{}, pdf_tagged: false)
+{:ok, pdf_binary} = Imprintor.compile_to_pdf(config)
+```
+
+You can combine `pdf_tagged: false` with a `:pdf_standard` that does not need
+tags, such as `a-2b`. The `a-1a`, `a-2a`, `a-3a` and `ua-1` standards require
+tags, so the compile returns an error:
+
+```elixir
+config = Imprintor.Config.new(template, %{}, pdf_tagged: false, pdf_standard: "ua-1")
+{:error, "cannot disable PDF tags because they are required by PDF/UA-1"} =
+  Imprintor.compile_to_pdf(config)
+```
 
 ### PNG Generation
 

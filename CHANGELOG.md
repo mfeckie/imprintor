@@ -1,5 +1,11 @@
 ## Changelog
 
+## 0.10.0
+
+- **Added:** a `:pdf_tagged` option on `Imprintor.Config.new/3` ([#25](https://github.com/mfeckie/imprintor/pull/25)). PDFs stay tagged for accessibility by default; pass `pdf_tagged: false` to leave the tags out. The PDF/A-1a, A-2a, A-3a and UA-1 standards require tags, so combining `pdf_tagged: false` with one of these returns `{:error, "cannot disable PDF tags because they are required by ..."}`.
+- **Fixed:** compiles that use a Typst package (`#import "@preview/..."`) no longer fail with `file not found ... typst.toml` when the package cache is incomplete. Before, a package directory counted as cached if it existed. OS temp cleaners can empty the cache and leave the directories behind, and an interrupted download leaves a partial package. Both caused every later compile to fail until the cache was deleted by hand. A package now counts as cached only when its `typst.toml` is present, otherwise it is downloaded again. Packages are unpacked into a temporary directory and then moved into place, so a partial package never appears in the cache.
+- **Internal:** a CI workflow now runs formatting checks and the test suite, with the NIF built from source, on every pull request.
+
 ## 0.9.1
 
 - **Fixed:** native memory no longer grows with every compile ([#21](https://github.com/mfeckie/imprintor/pull/21)). Typst stores memoized compile work in a cache that the whole OS process shares, and it is only freed when the host clears it. Imprintor never cleared it, so every `compile_to_pdf`/`compile_to_png` call (and the `_file` variants) left its entries behind for the life of the BEAM. This memory is native, so `:erlang.memory/0` stays flat while the OS process size keeps growing, until the process can be killed for running out of memory.
