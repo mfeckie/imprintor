@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  MIX_ENV: test
+  # Force building the NIF from source so tests exercise the code in the PR
+  # rather than a previously published precompiled binary.
+  FORCE_COMPILE: "true"
+  RUST_MIN_STACK: 33554432
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout source code
+        uses: actions/checkout@v4
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: "28"
+          elixir-version: "1.19"
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            native/imprintor
+
+      - name: Cache Mix dependencies
+        uses: actions/cache@v4
+        with:
+          path: deps
+          key: mix-deps-${{ runner.os }}-${{ hashFiles('mix.lock') }}
+
+      - name: Install dependencies
+        run: mix deps.get
+
+      - name: Check Elixir formatting
+        run: mix format --check-formatted
+
+      - name: Check Rust formatting
+        working-directory: native/imprintor
+        run: cargo fmt --check
+
+      - name: Compile
+        run: mix compile --warnings-as-errors
+
+      - name: Run tests
+        run: mix test
