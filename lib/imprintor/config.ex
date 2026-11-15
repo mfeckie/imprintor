@@ -58,7 +58,7 @@ defmodule Imprintor.Config do
   * `:extra_fonts` - List of additional font files to include (defaults to `[]`)
   * `:root_directory` - Root directory for resolving relative paths (defaults to `"."`)
   * `:pdf_standard` - PDF standard to enforce (defaults to `nil` / Typst default)
-  * `:pdf_tagged` - Include PDF tags (defaults to true). Requires a standard that allows tags to be absent.
+  * `:pdf_tagged` - Include PDF tags (defaults to true). Cannot be `false` with PDF/A-1a, A-2a, A-3a or UA-1, which require tags.
   * `:ppi` - Pixels-per-inch for PNG rendering (defaults to `nil`, which uses `144.0`)
 
   ## Returns

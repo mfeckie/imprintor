@@ -525,20 +525,10 @@ fn build_pdf_options(
         })?;
 
         if !options.tagged {
-            const ACCESSIBLE: &[(PdfStandard, &str)] = &[
-                (PdfStandard::A_1a, "PDF/A-1a"),
-                (PdfStandard::A_2a, "PDF/A-2a"),
-                (PdfStandard::A_3a, "PDF/A-3a"),
-                (PdfStandard::Ua_1, "PDF/UA-1"),
-            ];
-
-            for (standard, name) in ACCESSIBLE {
-                if standard == standard {
-                    return Err(format!(
-                        "cannot disable PDF tags because they are required by {}",
-                        name
-                    ));
-                }
+            if let Some(name) = tagging_required_by(&standard) {
+                return Err(format!(
+                    "cannot disable PDF tags because they are required by {name}"
+                ));
             }
         }
 
@@ -547,6 +537,16 @@ fn build_pdf_options(
     }
 
     Ok(options)
+}
+
+fn tagging_required_by(standard: &PdfStandard) -> Option<&'static str> {
+    match standard {
+        PdfStandard::A_1a => Some("PDF/A-1a"),
+        PdfStandard::A_2a => Some("PDF/A-2a"),
+        PdfStandard::A_3a => Some("PDF/A-3a"),
+        PdfStandard::Ua_1 => Some("PDF/UA-1"),
+        _ => None,
+    }
 }
 
 const SUPPORTED_PDF_STANDARDS: [&str; 17] = [
@@ -593,6 +593,34 @@ mod tests {
         let err = result.expect_err("conflicting PDF version standards should fail to construct");
         let message = format!("Invalid PDF standard: {err:?}");
         assert!(!message.is_empty());
+    }
+
+    #[test]
+    fn untagged_rejected_for_standards_that_require_tags() {
+        for (input, name) in [
+            ("a-1a", "PDF/A-1a"),
+            ("a-2a", "PDF/A-2a"),
+            ("a-3a", "PDF/A-3a"),
+            ("ua-1", "PDF/UA-1"),
+        ] {
+            let err = build_pdf_options(Some(input), Some(false))
+                .err()
+                .unwrap_or_else(|| panic!("{input} should reject untagged output"));
+            assert_eq!(
+                err,
+                format!("cannot disable PDF tags because they are required by {name}")
+            );
+        }
+    }
+
+    #[test]
+    fn untagged_allowed_for_standards_without_tag_requirement() {
+        for input in ["1.7", "2.0", "a-1b", "a-2b", "a-2u", "a-3b", "a-3u", "a-4"] {
+            let options = build_pdf_options(Some(input), Some(false))
+                .unwrap_or_else(|err| panic!("{input} should allow untagged output: {err}"));
+            assert!(!options.tagged);
+        }
+        assert!(!build_pdf_options(None, Some(false)).unwrap().tagged);
     }
 
     #[test]

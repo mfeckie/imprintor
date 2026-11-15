@@ -3,7 +3,7 @@ defmodule ImprintorTest do
   doctest Imprintor
 
   test "compile_to_pdf with simple template" do
-    template = "= Hello \#{sys.inputs.elixir_data.name}}\n\nThis is a test document."
+    template = "= Hello \#{sys.inputs.elixir_data.name}\n\nThis is a test document."
     data = %{"name" => "World"}
 
     config = Imprintor.Config.new(template, data)
@@ -596,7 +596,23 @@ defmodule ImprintorTest do
         flunk("Expected PDF generation to fail")
 
       {:error, reason} ->
-        assert reason == "cannot disable PDF tags because they are required by PDF/A-1a"
+        assert reason == "cannot disable PDF tags because they are required by PDF/UA-1"
+    end
+  end
+
+  test "compile_to_pdf without tags on a standard that does not require them" do
+    template =
+      "#set document(title: \"Test\", date: datetime.today())\n\nThis is a test document."
+
+    config = Imprintor.Config.new(template, %{}, pdf_tagged: false, pdf_standard: "a-2b")
+
+    case Imprintor.compile_to_pdf(config) do
+      {:ok, pdf_binary} ->
+        assert String.starts_with?(pdf_binary, "%PDF")
+        assert not String.contains?(pdf_binary, "StructTreeRoot")
+
+      {:error, reason} ->
+        flunk("Expected successful PDF generation, got error: #{inspect(reason)}")
     end
   end
 
